@@ -102,12 +102,17 @@ class WorkerAgent:
     async def _execute_run(self, claim: dict) -> None:
         run_id = claim["run_id"]
         job = claim["job"]
+        debug = bool(claim.get("debug"))
         workspace_path = str(Path(self.settings.runs_dir) / run_id)
         log_queue: asyncio.Queue[str | None] = asyncio.Queue()
+        stream_queue: asyncio.Queue[tuple[str, str] | None] = asyncio.Queue()
         drain_task: asyncio.Task | None = None
+        stream_drain_task: asyncio.Task | None = None
         try:
             await self.client.accept(run_id)
             await self._push_system_log(run_id, "Run accepté — préparation du workspace")
+            if debug:
+                await self._push_system_log(run_id, "Mode debug activé — logs verbeux du runner")
 
             loop = asyncio.get_running_loop()
 
@@ -118,23 +123,54 @@ class WorkerAgent:
                         break
                     await self._push_system_log(run_id, message)
 
+            async def _drain_stream_logs() -> None:
+                while True:
+                    item = await stream_queue.get()
+                    if item is None:
+                        break
+                    stream, message = item
+                    try:
+                        await self.client.push_logs(
+                            run_id,
+                            [
+                                {
+                                    "stream": stream,
+                                    "message": message,
+                                    "timestamp": datetime.now(UTC).isoformat(),
+                                }
+                            ],
+                        )
+                    except Exception:
+                        logger.warning("Impossible d'envoyer le log %s pour %s", stream, run_id)
+
             drain_task = asyncio.create_task(_drain_system_logs())
+            if debug:
+                stream_drain_task = asyncio.create_task(_drain_stream_logs())
 
             def on_system_log(message: str) -> None:
                 loop.call_soon_threadsafe(log_queue.put_nowait, message)
+
+            def on_stream_log(stream: str, message: str) -> None:
+                loop.call_soon_threadsafe(stream_queue.put_nowait, (stream, message))
 
             ctx = RunContext(
                 run_id=run_id,
                 job=job,
                 arguments=claim.get("arguments", {}),
                 workspace_path=workspace_path,
+                debug=debug,
                 on_system_log=on_system_log,
+                on_stream_log=on_stream_log if debug else None,
             )
             output = await self.executor.run(ctx)
 
             await log_queue.put(None)
             await drain_task
             drain_task = None
+            if stream_drain_task is not None:
+                await stream_queue.put(None)
+                await stream_drain_task
+                stream_drain_task = None
 
             log_entries = getattr(ctx, "_log_entries", [])
             if log_entries:
@@ -164,4 +200,7 @@ class WorkerAgent:
             if drain_task is not None:
                 await log_queue.put(None)
                 await drain_task
+            if stream_drain_task is not None:
+                await stream_queue.put(None)
+                await stream_drain_task
             self._current_runs -= 1

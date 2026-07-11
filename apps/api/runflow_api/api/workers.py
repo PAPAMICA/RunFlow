@@ -147,6 +147,7 @@ async def worker_claim(
         job=job_payload,
         arguments=run.arguments or {},
         workspace_path=run.workspace_path,
+        debug=bool(run.debug),
     )
 
 

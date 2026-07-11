@@ -82,7 +82,12 @@ export const api = {
   },
   getRun: (id: string) => request<Run>(`/api/v1/runs/${id}`),
   waitForRun,
-  runJob: async (slug: string, arguments_: Record<string, unknown>, wait = false) => {
+  runJob: async (
+    slug: string,
+    arguments_: Record<string, unknown>,
+    wait = false,
+    debug = false,
+  ) => {
     const res = await fetch(
       `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/v1/jobs/${slug}/run?wait=${wait}`,
       {
@@ -91,7 +96,7 @@ export const api = {
           "Content-Type": "application/json",
           ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
         },
-        body: JSON.stringify({ arguments: arguments_ }),
+        body: JSON.stringify({ arguments: arguments_, debug }),
       }
     );
     const data = await res.json().catch(() => ({}));
@@ -393,6 +398,7 @@ export interface Run {
   trigger_type: string;
   status: string;
   arguments: Record<string, unknown>;
+  debug?: boolean;
   exit_code?: number;
   result?: Record<string, unknown>;
   error?: string;

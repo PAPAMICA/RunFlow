@@ -210,6 +210,7 @@ class JobFileRename(BaseModel):
 
 class RunCreateRequest(BaseModel):
     arguments: dict[str, Any] = Field(default_factory=dict)
+    debug: bool = False
 
 
 class RunResponse(BaseModel):
@@ -219,6 +220,7 @@ class RunResponse(BaseModel):
     trigger_type: str
     status: str
     arguments: dict[str, Any]
+    debug: bool = False
     exit_code: int | None = None
     result: dict[str, Any] | None = None
     error: str | None = None
@@ -289,6 +291,7 @@ class WorkerRunPayload(BaseModel):
     job: dict[str, Any]
     arguments: dict[str, Any]
     workspace_path: str
+    debug: bool = False
 
 
 class DashboardStats(BaseModel):

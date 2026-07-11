@@ -3,11 +3,12 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { Clock, Copy, RefreshCw } from "lucide-react";
+import { Clock, Copy, RefreshCw, Bug } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
 import { RunLogViewer } from "@/components/RunLogViewer";
 import { StatusBadge } from "@/components/StatusBadge";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { api, Job, Run, streamRunLogs } from "@/lib/api";
@@ -103,7 +104,14 @@ export default function RunDetailPage() {
         <Card className={isLive ? "border-primary/30 glow-primary" : ""}>
           <CardContent className="pt-5">
             <p className="text-xs text-muted-foreground mb-1">Statut</p>
-            <StatusBadge status={run.status} />
+            <div className="flex flex-wrap items-center gap-2">
+              <StatusBadge status={run.status} />
+              {run.debug && (
+                <Badge variant="warning" className="text-[10px] gap-1">
+                  <Bug className="h-3 w-3" /> debug
+                </Badge>
+              )}
+            </div>
           </CardContent>
         </Card>
         <Card>

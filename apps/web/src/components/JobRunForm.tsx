@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { GitBranch, Loader2, Lock, Play, Terminal } from "lucide-react";
+import { GitBranch, Loader2, Lock, Play, Terminal, Bug } from "lucide-react";
 import { Job, JobParameter } from "@/lib/api";
 import { canLaunchDirectly, getUserFacingParameters } from "@/lib/job-args";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,8 @@ export function JobRunForm({
   job,
   runArgs,
   setRunArgs,
+  debug,
+  setDebug,
   onRun,
   running,
   result,
@@ -22,6 +24,8 @@ export function JobRunForm({
   job: Job;
   runArgs: Record<string, string>;
   setRunArgs: (v: Record<string, string>) => void;
+  debug: boolean;
+  setDebug: (v: boolean) => void;
   onRun: () => void;
   running: boolean;
   result: string;
@@ -76,6 +80,25 @@ export function JobRunForm({
               {result}
             </div>
           )}
+
+          <label className="flex items-start gap-3 rounded-lg border border-border-subtle p-4 cursor-pointer hover:border-primary/30 transition-colors">
+            <input
+              type="checkbox"
+              checked={debug}
+              onChange={(e) => setDebug(e.target.checked)}
+              className="accent-primary mt-0.5"
+            />
+            <div className="space-y-1">
+              <span className="text-sm font-medium flex items-center gap-1.5">
+                <Bug className="h-3.5 w-3.5 text-warning" />
+                Mode debug
+              </span>
+              <p className="text-xs text-muted-foreground">
+                Arborescence des fichiers, commande Docker, variables d&apos;environnement,
+                stdout en direct et résumé post-exécution.
+              </p>
+            </div>
+          </label>
 
           <div className="flex flex-wrap items-center gap-3 pt-2">
             <Button size="lg" onClick={onRun} disabled={running} className="min-w-[160px]">

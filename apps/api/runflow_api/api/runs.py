@@ -49,6 +49,7 @@ def _run_to_response(run: Run, redact: bool = True) -> RunResponse:
         trigger_type=run.trigger_type,
         status=run.status,
         arguments=args,
+        debug=bool(run.debug),
         exit_code=run.exit_code,
         result=run.result,
         error=run.error,
@@ -150,6 +151,7 @@ async def run_job(
         trigger_type=trigger_type,
         trigger_id=auth.api_key_id or auth.user_id,
         arguments=validated_args,
+        debug=payload.debug,
     )
     await enqueue_run(session, run)
     await session.commit()

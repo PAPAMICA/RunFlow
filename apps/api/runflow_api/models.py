@@ -204,6 +204,7 @@ class Run(Base, TimestampMixin):
     trigger_type: Mapped[str] = mapped_column(String(32), default=TriggerType.MANUAL)
     trigger_id: Mapped[str | None] = mapped_column(String(26))
     arguments: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    debug: Mapped[bool] = mapped_column(default=False)
     status: Mapped[str] = mapped_column(String(32), default=RunStatus.QUEUED)
     queued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     assigned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

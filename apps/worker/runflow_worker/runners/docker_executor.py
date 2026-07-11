@@ -15,6 +15,7 @@ import docker
 from docker.errors import DockerException
 
 from runflow_worker.config import get_settings
+from runflow_worker.debug_log import emit_post_run_debug, emit_runner_debug, emit_workspace_debug
 from runflow_worker.runners.base import BaseRunner, RunContext, RunOutput
 from runflow_shared import RunnerType
 
@@ -49,6 +50,8 @@ class DockerExecutor(BaseRunner):
 
         env["RUNFLOW_ARGS_FILE"] = "/runflow/input/args.json"
         env["RUNFLOW_RESULT_FILE"] = "/runflow/output/result.json"
+        if ctx.debug:
+            env["RUNFLOW_DEBUG"] = "1"
         for key, value in ctx.arguments.items():
             if isinstance(value, (str, int, float, bool)):
                 env[f"RUNFLOW_ARG_{key.upper()}"] = str(value)
@@ -117,17 +120,27 @@ class DockerExecutor(BaseRunner):
             ctx.job,
             workspace_job,
             on_system_log=ctx.on_system_log,
+            debug=ctx.debug,
         )
         ctx.job["job_files_path"] = str(workspace_job)
-        if ctx.on_system_log:
-            ctx.on_system_log(
-                f"Lancement du runner {ctx.job.get('runner_type')} — {ctx.job.get('resolved_entrypoint', ctx.job.get('entrypoint'))}"
-            )
-
         for sub in ("input", "output"):
             (workspace / sub).mkdir(parents=True, exist_ok=True)
 
         ctx.env = self._build_env(ctx)
+
+        if ctx.debug:
+            await asyncio.to_thread(
+                emit_workspace_debug,
+                workspace,
+                ctx.job,
+                ctx.arguments,
+                on_log=ctx.on_system_log,
+            )
+
+        if ctx.on_system_log:
+            ctx.on_system_log(
+                f"Lancement du runner {ctx.job.get('runner_type')} — {ctx.job.get('resolved_entrypoint', ctx.job.get('entrypoint'))}"
+            )
 
     async def execute(self, ctx: RunContext) -> RunOutput:
         settings = get_settings()
@@ -159,9 +172,23 @@ class DockerExecutor(BaseRunner):
         else:
             command = self._python_command(ctx, entrypoint)
 
+        image = self._runner_image(runner_type)
+        if ctx.debug:
+            secret_keys = set((ctx.job.get("secrets") or {}).keys())
+            await asyncio.to_thread(
+                emit_runner_debug,
+                runner_type=runner_type,
+                image=image,
+                command=command,
+                volumes=volumes,
+                env=ctx.env,
+                secret_keys=secret_keys,
+                on_log=ctx.on_system_log,
+            )
+
         try:
             self._container = client.containers.run(
-                image=self._runner_image(runner_type),
+                image=image,
                 command=command,
                 volumes=volumes,
                 environment=ctx.env,
@@ -184,13 +211,14 @@ class DockerExecutor(BaseRunner):
                     if text.endswith("\n"):
                         text = text[:-1]
                     stdout_chunks.append(text + "\n")
-                    log_entries.append(
-                        {
-                            "stream": "stdout",
-                            "message": text,
-                            "timestamp": datetime.now(UTC).isoformat(),
-                        }
-                    )
+                    entry = {
+                        "stream": "stdout",
+                        "message": text,
+                        "timestamp": datetime.now(UTC).isoformat(),
+                    }
+                    log_entries.append(entry)
+                    if ctx.debug and ctx.on_stream_log:
+                        ctx.on_stream_log("stdout", text)
 
             log_task = asyncio.create_task(asyncio.to_thread(_collect_logs))
 
@@ -201,20 +229,41 @@ class DockerExecutor(BaseRunner):
                 )
             except asyncio.TimeoutError:
                 self._container.kill()
-                return RunOutput(exit_code=124, stderr="Job timed out", stdout="".join(stdout_chunks))
+                output = RunOutput(exit_code=124, stderr="Job timed out", stdout="".join(stdout_chunks))
+                if ctx.debug:
+                    await asyncio.to_thread(
+                        emit_post_run_debug,
+                        workspace,
+                        output.exit_code,
+                        output.stdout,
+                        output.stderr,
+                        on_log=ctx.on_system_log,
+                    )
+                return output
 
             await log_task
             exit_code = result.get("StatusCode", 1)
             result_file = workspace / "output" / "result.json"
             result_content = result_file.read_text(encoding="utf-8") if result_file.is_file() else None
 
-            ctx._log_entries = log_entries  # type: ignore[attr-defined]
-            return RunOutput(
+            output = RunOutput(
                 exit_code=exit_code,
                 stdout="".join(stdout_chunks),
                 stderr="".join(stderr_chunks),
                 result_file_content=result_content,
             )
+            if ctx.debug:
+                await asyncio.to_thread(
+                    emit_post_run_debug,
+                    workspace,
+                    output.exit_code,
+                    output.stdout,
+                    output.stderr,
+                    on_log=ctx.on_system_log,
+                )
+            else:
+                ctx._log_entries = log_entries  # type: ignore[attr-defined]
+            return output
         except DockerException as exc:
             return RunOutput(exit_code=1, stderr=str(exc))
 
@@ -263,6 +312,12 @@ class DockerExecutor(BaseRunner):
         else:
             cmd = ["python3", str(workspace / entrypoint)]
 
+        if ctx.debug and ctx.on_system_log:
+            import shlex
+            ctx.on_system_log(f"── Exécution locale (docker désactivé) ──")
+            ctx.on_system_log(f"  commande: {' '.join(shlex.quote(c) for c in cmd)}")
+            ctx.on_system_log(f"  cwd: {workspace}")
+
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             cwd=str(workspace),
@@ -271,14 +326,33 @@ class DockerExecutor(BaseRunner):
             stderr=asyncio.subprocess.PIPE,
         )
         stdout, stderr = await proc.communicate()
+        stdout_text = stdout.decode()
+        stderr_text = stderr.decode()
+
+        if ctx.debug and ctx.on_stream_log:
+            for line in stdout_text.splitlines():
+                ctx.on_stream_log("stdout", line)
+            for line in stderr_text.splitlines():
+                ctx.on_stream_log("stderr", line)
+
         result_file = Path(ctx.workspace_path) / "output" / "result.json"
         result_content = result_file.read_text(encoding="utf-8") if result_file.is_file() else None
-        return RunOutput(
+        output = RunOutput(
             exit_code=proc.returncode or 0,
-            stdout=stdout.decode(),
-            stderr=stderr.decode(),
+            stdout=stdout_text,
+            stderr=stderr_text,
             result_file_content=result_content,
         )
+        if ctx.debug:
+            await asyncio.to_thread(
+                emit_post_run_debug,
+                Path(ctx.workspace_path),
+                output.exit_code,
+                output.stdout,
+                output.stderr,
+                on_log=ctx.on_system_log,
+            )
+        return output
 
     async def cleanup(self, ctx: RunContext) -> None:
         if self._container is not None:

@@ -39,6 +39,7 @@ export default function JobDetailPage() {
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [content, setContent] = useState("");
   const [runArgs, setRunArgs] = useState<Record<string, string>>({});
+  const [runDebug, setRunDebug] = useState(false);
   const [runResult, setRunResult] = useState("");
   const [running, setRunning] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -114,7 +115,7 @@ export default function JobDetailPage() {
     setRunResult("Mise en file d'attente…");
     try {
       const args = buildRunArguments(job, runArgs);
-      const queued = await api.runJob(job.slug, args, false) as { run_id: string; status: string };
+      const queued = await api.runJob(job.slug, args, false, runDebug) as { run_id: string; status: string };
       router.push(`/runs/${queued.run_id}`);
     } catch (err) {
       setRunResult(err instanceof Error ? err.message : "Erreur");
@@ -383,6 +384,8 @@ export default function JobDetailPage() {
           job={job}
           runArgs={runArgs}
           setRunArgs={setRunArgs}
+          debug={runDebug}
+          setDebug={setRunDebug}
           onRun={runJob}
           running={running}
           result={runResult}
