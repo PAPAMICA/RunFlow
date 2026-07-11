@@ -610,7 +610,7 @@ main() {
   ensure_worker_credentials
 
   log "Démarrage du worker..."
-  $COMPOSE up -d worker
+  $COMPOSE up -d --build --force-recreate worker
 
   log "État des services :"
   $COMPOSE ps
