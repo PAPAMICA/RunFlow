@@ -203,8 +203,21 @@ export const api = {
       body: JSON.stringify({ recipient }),
     }),
   getInventories: () => request<Inventory[]>("/api/v1/inventories"),
+  getInventory: (id: string) => request<InventoryDetail>(`/api/v1/inventories/${id}`),
   createInventory: (data: InventoryCreate) =>
     request<Inventory>("/api/v1/inventories", { method: "POST", body: JSON.stringify(data) }),
+  updateInventory: (id: string, data: InventoryUpdate) =>
+    request<InventoryDetail>(`/api/v1/inventories/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  deleteInventory: (id: string) =>
+    request<void>(`/api/v1/inventories/${id}`, { method: "DELETE" }),
+  testInventory: (id: string, data: { credential_id?: string; content?: string }) =>
+    request<{ success: boolean; output: string }>(`/api/v1/inventories/${id}/test`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
   getApiKeys: () => request<ApiKey[]>("/api/v1/api-keys"),
   createApiKey: (data: ApiKeyCreate) =>
     request<ApiKeyCreated>("/api/v1/api-keys", { method: "POST", body: JSON.stringify(data) }),
@@ -478,7 +491,9 @@ export interface SmtpConfigInput {
   use_tls: boolean;
 }
 export interface Inventory { id: string; name: string; source_type: string }
+export interface InventoryDetail extends Inventory { content?: string | null; project_id?: string | null }
 export interface InventoryCreate { name: string; source_type?: string; content?: string; project_id?: string }
+export interface InventoryUpdate { name?: string; content?: string; git_config?: Record<string, unknown> }
 export interface ApiKey { id: string; name: string; prefix: string; scopes: string[]; enabled: boolean }
 export interface ApiKeyCreate { name: string; scopes?: string[]; project_id?: string }
 export interface ApiKeyCreated extends ApiKey { key: string }
