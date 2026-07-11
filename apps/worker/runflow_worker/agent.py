@@ -6,6 +6,8 @@ import asyncio
 import logging
 import socket
 
+from httpx import ConnectError, HTTPError
+
 from runflow_worker import __version__
 from runflow_worker.client import WorkerAPIClient
 from runflow_worker.config import get_settings
@@ -24,11 +26,22 @@ class WorkerAgent:
 
     async def start(self) -> None:
         hostname = socket.gethostname()
+        await self._wait_for_api(hostname)
         heartbeat_task = asyncio.create_task(self._heartbeat_loop(hostname))
 
         try:
             while True:
-                claim = await self.client.claim()
+                try:
+                    claim = await self.client.claim()
+                except (ConnectError, HTTPError) as exc:
+                    logger.warning("Claim impossible (%s), nouvelle tentative…", exc)
+                    await asyncio.sleep(3)
+                    continue
+                except Exception:
+                    logger.exception("Claim failed")
+                    await asyncio.sleep(3)
+                    continue
+
                 if not claim:
                     await asyncio.sleep(1)
                     continue
@@ -37,6 +50,20 @@ class WorkerAgent:
         finally:
             heartbeat_task.cancel()
             await self.client.close()
+
+    async def _wait_for_api(self, hostname: str, attempts: int = 60) -> None:
+        logger.info("Connexion à l'API %s…", self.settings.api_url)
+        for attempt in range(1, attempts + 1):
+            try:
+                await self.client.heartbeat(hostname, __version__, 0)
+                logger.info("API joignable")
+                return
+            except (ConnectError, HTTPError) as exc:
+                logger.warning("API indisponible (%s) — tentative %s/%s", exc, attempt, attempts)
+            except Exception:
+                logger.exception("Erreur lors de la connexion à l'API (tentative %s/%s)", attempt, attempts)
+            await asyncio.sleep(2)
+        raise RuntimeError(f"API injoignable après {attempts} tentatives : {self.settings.api_url}")
 
     async def _heartbeat_loop(self, hostname: str) -> None:
         while True:

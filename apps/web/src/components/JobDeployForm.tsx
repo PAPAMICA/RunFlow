@@ -54,6 +54,7 @@ export function JobDeployForm({ projects, onCreated, onCancel }: JobDeployFormPr
   const [repoUrl, setRepoUrl] = useState("");
   const [branch, setBranch] = useState("main");
   const [repoPath, setRepoPath] = useState("");
+  const [gitToken, setGitToken] = useState("");
   const [entrypoint, setEntrypoint] = useState("main.py");
   const [envContent, setEnvContent] = useState("");
   const [parameters, setParameters] = useState<JobParameterInput[]>([]);
@@ -99,6 +100,7 @@ export function JobDeployForm({ projects, onCreated, onCancel }: JobDeployFormPr
         git_config: { repository_url: repoUrl, branch, path: repoPath },
         runner_type: runnerType,
         entrypoint: entrypoint || undefined,
+        access_token: gitToken.trim() || undefined,
       });
       applyPreview(data);
     } catch (err) {
@@ -117,6 +119,7 @@ export function JobDeployForm({ projects, onCreated, onCancel }: JobDeployFormPr
         git_config: { repository_url: repoUrl, branch, path: repoPath },
         runner_type: runnerType,
         entrypoint: path,
+        access_token: gitToken.trim() || undefined,
       });
       setPreview((prev) => (prev ? { ...prev, ...data } : data));
       if (data.detected_parameters.length) {
@@ -139,7 +142,14 @@ export function JobDeployForm({ projects, onCreated, onCancel }: JobDeployFormPr
         runner_type: runnerType,
         source_type: sourceType,
         entrypoint,
-        git_config: useGit ? { repository_url: repoUrl, branch, path: repoPath } : undefined,
+        git_config: useGit
+          ? {
+              repository_url: repoUrl,
+              branch,
+              path: repoPath,
+              access_token: gitToken.trim() || undefined,
+            }
+          : undefined,
         env_file_content: envContent.trim() ? envContent : undefined,
         parameters: parameters.filter((p) => p.name.trim()),
       });
@@ -297,7 +307,21 @@ export function JobDeployForm({ projects, onCreated, onCancel }: JobDeployFormPr
                   </div>
                 </div>
 
-                <div className="grid gap-4 sm:grid-cols-3">
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="space-y-2 sm:col-span-2">
+                    <Label htmlFor="git-token">Token Git (optionnel)</Label>
+                    <Input
+                      id="git-token"
+                      type="password"
+                      value={gitToken}
+                      onChange={(e) => setGitToken(e.target.value)}
+                      placeholder="Pour dépôts privés (GitHub/GitLab)"
+                      autoComplete="off"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Utilisez une URL HTTPS. Les URLs SSH (git@…) ne sont pas supportées.
+                    </p>
+                  </div>
                   <div className="space-y-2">
                     <Label htmlFor="git-branch">Branche</Label>
                     <Input id="git-branch" value={branch} onChange={(e) => setBranch(e.target.value)} />
@@ -311,6 +335,9 @@ export function JobDeployForm({ projects, onCreated, onCancel }: JobDeployFormPr
                       placeholder="optionnel"
                     />
                   </div>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="entrypoint">Script (entrypoint)</Label>
                     {preview?.suggested_entrypoints.length ? (

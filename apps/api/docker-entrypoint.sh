@@ -23,4 +23,5 @@ if ! alembic upgrade head; then
 fi
 
 echo "==> Starting API server..."
+git config --global --add safe.directory '*' 2>/dev/null || true
 exec uvicorn runflow_api.main:app --host 0.0.0.0 --port 8000

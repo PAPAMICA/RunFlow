@@ -64,12 +64,14 @@ class GitConfig(BaseModel):
     repository_url: str
     branch: str = "main"
     path: str = ""
+    access_token: str | None = None
 
 
 class GitPreviewRequest(BaseModel):
     git_config: GitConfig
     runner_type: str = "python"
     entrypoint: str | None = None
+    access_token: str | None = None
 
 
 class GitPreviewFile(BaseModel):

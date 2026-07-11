@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from runflow_api.services.git_sync import get_git_worktree
 from runflow_api.services.script_parser import parse_script_parameters
+
+logger = logging.getLogger(__name__)
 
 ENV_CANDIDATES = (".env.example", ".env.sample", ".env.template", "env.example")
 SCRIPT_EXTENSIONS = {".py", ".sh", ".bash"}
@@ -76,11 +79,14 @@ def build_git_preview(
     git_config: dict,
     runner_type: str = "python",
     entrypoint: str | None = None,
+    access_token: str | None = None,
 ) -> dict:
     """Clone/fetch repo and return preview metadata for the job creation UI."""
+    cfg = {**git_config, "access_token": access_token or git_config.get("access_token")}
     try:
-        root = get_git_worktree(git_config)
+        root = get_git_worktree(cfg)
     except RuntimeError as exc:
+        logger.warning("git-preview failed for %s: %s", git_config.get("repository_url"), exc)
         raise ValueError(str(exc)) from exc
 
     if not root.is_dir():

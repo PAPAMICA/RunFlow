@@ -74,8 +74,11 @@ services:
     volumes:
       - ./data/runflow:/data
     networks:
-      - internal
-      - proxy
+      internal:
+        aliases:
+          - api
+          - runflow_api
+      proxy:
     depends_on:
       postgres:
         condition: service_healthy

@@ -163,12 +163,14 @@ export interface GitConfig {
   repository_url: string;
   branch?: string;
   path?: string;
+  access_token?: string;
 }
 
 export interface GitPreviewRequest {
   git_config: GitConfig;
   runner_type?: string;
   entrypoint?: string;
+  access_token?: string;
 }
 
 export interface GitPreviewFile {

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
@@ -36,6 +37,7 @@ from runflow_api.utils import new_ulid
 from runflow_shared import RunStatus
 
 router = APIRouter(tags=["jobs"])
+logger = logging.getLogger(__name__)
 
 
 async def _upsert_env_file(
@@ -65,7 +67,8 @@ def _job_to_response(job: Job) -> JobResponse:
     has_env = any(f.path == ".env" and f.content for f in job.files)
     git_cfg = None
     if job.git_config:
-        git_cfg = GitConfig(**job.git_config)
+        safe_cfg = {k: v for k, v in job.git_config.items() if k != "access_token"}
+        git_cfg = GitConfig(**safe_cfg)
     return JobResponse(
         id=job.id,
         organization_id=job.organization_id,
@@ -168,11 +171,13 @@ async def preview_git_source(
     try:
         preview = await asyncio.to_thread(
             build_git_preview,
-            payload.git_config.model_dump(),
+            payload.git_config.model_dump(exclude={"access_token"}),
             payload.runner_type,
             payload.entrypoint,
+            payload.access_token or payload.git_config.access_token,
         )
     except ValueError as exc:
+        logger.warning("git-preview rejected: %s", exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return GitPreviewResponse(**preview)
 
