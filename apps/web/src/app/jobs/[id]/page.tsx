@@ -4,16 +4,23 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import { GitBranch, Play, Save } from "lucide-react";
 import { AskAIPanel } from "@/components/AskAIPanel";
 import { AppShell } from "@/components/AppShell";
+import { JobRunForm } from "@/components/JobRunForm";
+import { PageHeader } from "@/components/PageHeader";
+import { StatusBadge } from "@/components/StatusBadge";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { api, Job, JobFileNode, JobStats, Run } from "@/lib/api";
 
 const MonacoEditor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
 
-type Tab = "overview" | "code" | "parameters" | "runs" | "run";
+type Tab = "overview" | "source" | "code" | "parameters" | "runs" | "run";
 
 export default function JobDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -25,19 +32,47 @@ export default function JobDetailPage() {
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [content, setContent] = useState("");
   const [runArgs, setRunArgs] = useState<Record<string, string>>({});
-  const [runResult, setRunResult] = useState<string>("");
+  const [runResult, setRunResult] = useState("");
+  const [running, setRunning] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState("");
 
-  useEffect(() => {
-    api.getJob(id).then(setJob).catch(console.error);
+  const [repoUrl, setRepoUrl] = useState("");
+  const [branch, setBranch] = useState("main");
+  const [repoPath, setRepoPath] = useState("");
+  const [entrypoint, setEntrypoint] = useState("main.py");
+  const [envContent, setEnvContent] = useState("");
+
+  function loadJob() {
+    api.getJob(id).then((j) => {
+      setJob(j);
+      setEntrypoint(j.entrypoint);
+      if (j.git_config) {
+        setRepoUrl(j.git_config.repository_url);
+        setBranch(j.git_config.branch ?? "main");
+        setRepoPath(j.git_config.path ?? "");
+      }
+      const defaults: Record<string, string> = {};
+      for (const p of j.parameters) {
+        if (p.default_value != null) defaults[p.name] = String(p.default_value);
+      }
+      setRunArgs(defaults);
+    }).catch(console.error);
     api.getJobStats(id).then(setStats).catch(console.error);
-  }, [id]);
+  }
+
+  useEffect(() => { loadJob(); }, [id]);
 
   useEffect(() => {
     if (tab === "code") api.listJobFiles(id).then(setFiles).catch(console.error);
     if (tab === "runs") api.getJobRuns(id).then(setJobRuns).catch(console.error);
-  }, [id, tab]);
+    if (tab === "source" && job?.has_env_file) {
+      api.getJobFile(id, ".env").then((f) => setEnvContent(f.content ?? "")).catch(() => setEnvContent(""));
+    }
+  }, [id, tab, job?.has_env_file]);
 
   async function loadFile(path: string) {
+    if (path === "[git]") return;
     const file = await api.getJobFile(id, path);
     setSelectedFile(path);
     setContent(file.content || "");
@@ -48,51 +83,89 @@ export default function JobDetailPage() {
     await api.writeJobFile(id, selectedFile, content);
   }
 
-  async function createFile() {
-    const path = prompt("Nom du fichier (ex: main.py):");
-    if (!path) return;
-    await api.createJobFile(id, path, false, "");
-    setFiles(await api.listJobFiles(id));
-    await loadFile(path);
+  async function saveSource() {
+    if (!job) return;
+    setSaving(true);
+    setSaveMsg("");
+    try {
+      const updated = await api.updateJob(id, {
+        entrypoint,
+        git_config: job.source_type === "git"
+          ? { repository_url: repoUrl, branch, path: repoPath }
+          : undefined,
+        env_file_content: envContent,
+      });
+      setJob(updated);
+      setSaveMsg("Configuration enregistrée");
+    } catch (err) {
+      setSaveMsg(err instanceof Error ? err.message : "Erreur");
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function runJob() {
     if (!job) return;
-    const args: Record<string, unknown> = {};
-    for (const p of job.parameters) {
-      if (runArgs[p.name] !== undefined) {
-        if (p.param_type === "boolean") args[p.name] = runArgs[p.name] === "true";
-        else if (p.param_type === "integer") args[p.name] = parseInt(runArgs[p.name], 10);
-        else args[p.name] = runArgs[p.name];
+    setRunning(true);
+    setRunResult("");
+    try {
+      const args: Record<string, unknown> = {};
+      for (const p of job.parameters) {
+        const raw = runArgs[p.name];
+        if (raw === undefined || raw === "") continue;
+        if (p.param_type === "boolean") args[p.name] = raw === "true";
+        else if (p.param_type === "integer") args[p.name] = parseInt(raw, 10);
+        else args[p.name] = raw;
       }
+      const result = await api.runJob(job.slug, args, true);
+      setRunResult(JSON.stringify(result, null, 2));
+      api.getJobStats(id).then(setStats).catch(console.error);
+    } catch (err) {
+      setRunResult(err instanceof Error ? err.message : "Erreur");
+    } finally {
+      setRunning(false);
     }
-    const result = await api.runJob(job.slug, args, true);
-    setRunResult(JSON.stringify(result, null, 2));
-    api.getJobStats(id).then(setStats).catch(console.error);
   }
 
-  if (!job) return <AppShell><p>Chargement...</p></AppShell>;
+  if (!job) {
+    return (
+      <AppShell>
+        <p className="text-muted-foreground">Chargement…</p>
+      </AppShell>
+    );
+  }
 
   const tabs: { key: Tab; label: string }[] = [
-    { key: "overview", label: "Overview" },
+    { key: "overview", label: "Vue d'ensemble" },
+    { key: "source", label: "Source & .env" },
     { key: "code", label: "Code" },
-    { key: "parameters", label: "Parameters" },
-    { key: "runs", label: "Runs" },
-    { key: "run", label: "Run" },
+    { key: "parameters", label: "Paramètres" },
+    { key: "runs", label: "Exécutions" },
+    { key: "run", label: "Lancer" },
   ];
 
   return (
     <AppShell>
-      <h2 className="text-xl font-bold mb-2">{job.name}</h2>
-      <p className="text-muted text-sm mb-4">{job.slug} · {job.runner_type}</p>
+      <PageHeader
+        title={job.name}
+        description={`${job.slug} · ${job.runner_type} · ${job.source_type}`}
+        action={
+          <Button onClick={() => setTab("run")}>
+            <Play className="h-4 w-4" />
+            Lancer
+          </Button>
+        }
+      />
 
-      <div className="flex gap-2 mb-6 border-b border-border">
+      <div className="flex flex-wrap gap-1 mb-6 border-b border-border pb-px">
         {tabs.map((t) => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`px-4 py-2 text-sm border-b-2 -mb-px ${
-              tab === t.key ? "border-primary text-primary" : "border-transparent text-muted"
+            className={`px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors ${
+              tab === t.key
+                ? "bg-card border border-border border-b-transparent text-primary"
+                : "text-muted-foreground hover:text-foreground"
             }`}
           >
             {t.label}
@@ -101,150 +174,194 @@ export default function JobDetailPage() {
       </div>
 
       {tab === "overview" && (
-        <div className="space-y-4">
+        <div className="space-y-6">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {stats && [
               { label: "Total runs", value: stats.total_runs },
-              { label: "Success rate", value: `${stats.success_rate}%` },
-              { label: "Durée moyenne", value: stats.avg_duration_seconds ? `${stats.avg_duration_seconds.toFixed(1)}s` : "-" },
-              { label: "Dernier run", value: stats.last_run?.status || "-" },
+              { label: "Taux de succès", value: `${stats.success_rate}%` },
+              { label: "Durée moyenne", value: stats.avg_duration_seconds ? `${stats.avg_duration_seconds.toFixed(1)}s` : "—" },
+              { label: "Dernier run", value: stats.last_run?.status ?? "—" },
             ].map((s) => (
-              <Card key={s.label} className="p-4">
-                <p className="text-sm text-muted">{s.label}</p>
-                <p className="text-xl font-bold mt-1">{s.value}</p>
+              <Card key={s.label}>
+                <CardContent className="pt-5">
+                  <p className="text-sm text-muted-foreground">{s.label}</p>
+                  <p className="text-2xl font-bold mt-1">{s.value}</p>
+                </CardContent>
               </Card>
             ))}
           </div>
-          <div className="text-sm space-y-1">
-            <p><span className="text-muted">Entrypoint:</span> {job.entrypoint}</p>
-            <p><span className="text-muted">Description:</span> {job.description || "-"}</p>
-          </div>
+          <Card>
+            <CardContent className="pt-5 space-y-2 text-sm">
+              <p><span className="text-muted-foreground">Entrypoint :</span> <code className="font-mono">{job.entrypoint}</code></p>
+              <p><span className="text-muted-foreground">Source :</span> {job.source_type}</p>
+              {job.git_config && (
+                <p className="flex items-center gap-2">
+                  <GitBranch className="h-4 w-4 text-primary" />
+                  <code className="font-mono text-xs">{job.git_config.repository_url}</code>
+                </p>
+              )}
+              {job.has_env_file && <Badge variant="accent">.env configuré</Badge>}
+            </CardContent>
+          </Card>
         </div>
+      )}
+
+      {tab === "source" && (
+        <Card className="max-w-2xl">
+          <CardHeader>
+            <CardTitle>Source & variables d&apos;environnement</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {job.source_type === "git" && (
+              <>
+                <div className="space-y-2">
+                  <Label>URL Git</Label>
+                  <Input value={repoUrl} onChange={(e) => setRepoUrl(e.target.value)} />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Branche</Label>
+                    <Input value={branch} onChange={(e) => setBranch(e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Sous-dossier</Label>
+                    <Input value={repoPath} onChange={(e) => setRepoPath(e.target.value)} />
+                  </div>
+                </div>
+              </>
+            )}
+            <div className="space-y-2">
+              <Label>Script Python (entrypoint)</Label>
+              <Input value={entrypoint} onChange={(e) => setEntrypoint(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>Fichier .env (injecté à chaque exécution)</Label>
+              <Textarea
+                value={envContent}
+                onChange={(e) => setEnvContent(e.target.value)}
+                className="font-mono text-xs min-h-[140px]"
+                placeholder="KEY=value"
+              />
+            </div>
+            <div className="flex items-center gap-3">
+              <Button onClick={saveSource} disabled={saving}>
+                <Save className="h-4 w-4" />
+                {saving ? "Enregistrement…" : "Enregistrer"}
+              </Button>
+              {saveMsg && <span className="text-sm text-muted-foreground">{saveMsg}</span>}
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       {tab === "code" && (
         <div>
-        <div className="flex gap-4 h-[600px]">
-          <Card className="w-48 p-2 overflow-auto">
-            <Button size="sm" variant="ghost" onClick={createFile} className="mb-2 w-full">+ New File</Button>
-            {files.filter((f) => !f.is_directory).map((f) => (
-              <button
-                key={f.path}
-                onClick={() => loadFile(f.path)}
-                className={`block w-full text-left text-xs py-1 px-2 rounded ${
-                  selectedFile === f.path ? "bg-primary/20" : ""
-                }`}
-              >
-                {f.path}
-              </button>
-            ))}
-          </Card>
-          <Card className="flex-1 flex flex-col overflow-hidden">
-            {selectedFile ? (
-              <>
-                <div className="flex justify-between items-center px-3 py-2 border-b border-border">
-                  <span className="text-sm">{selectedFile}</span>
-                  <Button size="sm" onClick={saveFile}>Save</Button>
-                </div>
-                <MonacoEditor
-                  height="100%"
-                  language={selectedFile.endsWith(".py") ? "python" : "plaintext"}
-                  theme="vs-dark"
-                  value={content}
-                  onChange={(v) => setContent(v || "")}
-                />
-              </>
-            ) : (
-              <p className="p-4 text-muted text-sm">Sélectionnez un fichier</p>
-            )}
-          </Card>
-        </div>
-        <AskAIPanel jobId={id} selectedFile={selectedFile} />
+          {job.source_type === "git" ? (
+            <p className="text-sm text-muted-foreground mb-4">
+              Le code provient du dépôt Git. Seuls les fichiers overlay (ex. .env) sont éditables ici.
+            </p>
+          ) : null}
+          <div className="flex gap-4 h-[560px]">
+            <Card className="w-52 p-2 overflow-auto shrink-0">
+              {files.map((f) => (
+                <button
+                  key={f.path}
+                  onClick={() => loadFile(f.path)}
+                  disabled={f.path === "[git]"}
+                  className={`block w-full text-left text-xs py-2 px-2 rounded truncate ${
+                    selectedFile === f.path ? "bg-primary/15 text-primary" : "hover:bg-card-hover"
+                  } ${f.path === "[git]" ? "text-muted-foreground cursor-default" : ""}`}
+                >
+                  {f.path}
+                </button>
+              ))}
+            </Card>
+            <Card className="flex-1 flex flex-col overflow-hidden">
+              {selectedFile && selectedFile !== "[git]" ? (
+                <>
+                  <div className="flex justify-between items-center px-4 py-2 border-b border-border">
+                    <span className="text-sm font-mono">{selectedFile}</span>
+                    <Button size="sm" onClick={saveFile}>Enregistrer</Button>
+                  </div>
+                  <div className="flex-1 min-h-0">
+                    <MonacoEditor
+                      height="100%"
+                      language={selectedFile.endsWith(".py") ? "python" : selectedFile === ".env" ? "ini" : "plaintext"}
+                      theme="vs-dark"
+                      value={content}
+                      onChange={(v) => setContent(v || "")}
+                    />
+                  </div>
+                </>
+              ) : (
+                <p className="p-6 text-muted-foreground text-sm">Sélectionnez un fichier overlay</p>
+              )}
+            </Card>
+          </div>
+          {job.source_type === "internal" && <AskAIPanel jobId={id} selectedFile={selectedFile} />}
         </div>
       )}
 
       {tab === "parameters" && (
-        <div className="text-sm space-y-2">
-          {job.parameters.length === 0 ? (
-            <p className="text-muted">Aucun paramètre défini</p>
-          ) : (
-            job.parameters.map((p) => (
-              <Card key={p.id} className="p-3">
-                <span className="font-medium">{p.name}</span>
-                <span className="text-muted ml-2">({p.param_type})</span>
-                {p.required && <span className="text-red-400 ml-2">required</span>}
-              </Card>
-            ))
-          )}
-        </div>
+        <Card className="max-w-lg">
+          <CardContent className="pt-5 space-y-3">
+            {job.parameters.length === 0 ? (
+              <p className="text-muted-foreground text-sm">Aucun paramètre — ajoutez-en lors du déploiement.</p>
+            ) : (
+              job.parameters.map((p) => (
+                <div key={p.id} className="rounded-lg border border-border-subtle p-3">
+                  <p className="font-medium font-mono">{p.name}</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {p.label} · {p.param_type}
+                    {p.required && " · requis"}
+                  </p>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
       )}
 
       {tab === "runs" && (
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-muted border-b border-border">
-              <th className="pb-2">ID</th>
-              <th className="pb-2">Status</th>
-              <th className="pb-2">Durée</th>
-              <th className="pb-2">Date</th>
-            </tr>
-          </thead>
-          <tbody>
-            {jobRuns.map((r) => (
-              <tr key={r.id} className="border-b border-border/50">
-                <td className="py-2">
-                  <Link href={`/runs/${r.id}`} className="text-primary hover:underline">
-                    {r.id.slice(0, 12)}...
-                  </Link>
-                </td>
-                <td className="py-2">{r.status}</td>
-                <td className="py-2">{r.duration_seconds?.toFixed(1) ?? "-"}s</td>
-                <td className="py-2">{new Date(r.queued_at).toLocaleString()}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <Card>
+          <CardContent className="pt-5 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-muted-foreground border-b border-border">
+                  <th className="pb-3">ID</th>
+                  <th className="pb-3">Statut</th>
+                  <th className="pb-3">Durée</th>
+                  <th className="pb-3">Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                {jobRuns.map((r) => (
+                  <tr key={r.id} className="border-b border-border-subtle">
+                    <td className="py-2">
+                      <Link href={`/runs/${r.id}`} className="text-primary hover:underline font-mono">
+                        {r.id.slice(0, 10)}…
+                      </Link>
+                    </td>
+                    <td className="py-2"><StatusBadge status={r.status} /></td>
+                    <td className="py-2">{r.duration_seconds?.toFixed(1) ?? "—"}s</td>
+                    <td className="py-2">{new Date(r.queued_at).toLocaleString("fr-FR")}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
       )}
 
       {tab === "run" && (
-        <div className="max-w-lg space-y-4">
-          {job.parameters.map((p) => (
-            <label key={p.id} className="block">
-              <span className="text-sm text-muted">{p.label || p.name}</span>
-              {p.param_type === "boolean" ? (
-                <select
-                  value={runArgs[p.name] || "false"}
-                  onChange={(e) => setRunArgs({ ...runArgs, [p.name]: e.target.value })}
-                  className="block w-full mt-1 h-9 px-3 bg-background border border-border rounded text-sm"
-                >
-                  <option value="true">true</option>
-                  <option value="false">false</option>
-                </select>
-              ) : p.param_type === "select" && p.options ? (
-                <select
-                  value={runArgs[p.name] || ""}
-                  onChange={(e) => setRunArgs({ ...runArgs, [p.name]: e.target.value })}
-                  className="block w-full mt-1 h-9 px-3 bg-background border border-border rounded text-sm"
-                >
-                  {p.options.map((o) => (
-                    <option key={o} value={o}>{o}</option>
-                  ))}
-                </select>
-              ) : (
-                <Input
-                  type={p.param_type === "secret" ? "password" : "text"}
-                  value={runArgs[p.name] || ""}
-                  onChange={(e) => setRunArgs({ ...runArgs, [p.name]: e.target.value })}
-                  className="mt-1"
-                />
-              )}
-            </label>
-          ))}
-          <Button onClick={runJob}>Lancer le Job</Button>
-          {runResult && (
-            <pre className="p-4 bg-card border border-border rounded text-xs overflow-auto">{runResult}</pre>
-          )}
-        </div>
+        <JobRunForm
+          job={job}
+          runArgs={runArgs}
+          setRunArgs={setRunArgs}
+          onRun={runJob}
+          running={running}
+          result={runResult}
+        />
       )}
     </AppShell>
   );

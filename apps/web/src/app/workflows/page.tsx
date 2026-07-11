@@ -2,85 +2,102 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { Plus, Workflow } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
+import { EmptyState } from "@/components/EmptyState";
+import { PageHeader } from "@/components/PageHeader";
+import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { api, Job, Project } from "@/lib/api";
+import { Label } from "@/components/ui/label";
+import { api, Project, Workflow as WorkflowType } from "@/lib/api";
 
 export default function WorkflowsPage() {
-  const [workflows, setWorkflows] = useState<{ id: string; name: string; slug: string; node_count: number; enabled: boolean }[]>([]);
+  const [workflows, setWorkflows] = useState<WorkflowType[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
-  const [jobs, setJobs] = useState<Job[]>([]);
+  const [showCreate, setShowCreate] = useState(false);
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
-  const [jobId, setJobId] = useState("");
-  const [error, setError] = useState("");
 
   async function refresh() {
-    const [w, p, j] = await Promise.all([api.getWorkflows(), api.getProjects(), api.getJobs()]);
+    const [w, p] = await Promise.all([api.getWorkflows(), api.getProjects()]);
     setWorkflows(w);
     setProjects(p);
-    setJobs(j);
-    if (!jobId && j[0]) setJobId(j[0].id);
-    if (!slug && name) setSlug(name.toLowerCase().replace(/\s+/g, "-"));
   }
 
   useEffect(() => { refresh().catch(console.error); }, []);
 
-  async function handleCreate(e: React.FormEvent) {
-    e.preventDefault();
-    setError("");
-    if (!projects[0]) {
-      setError("Aucun projet disponible");
-      return;
-    }
-    try {
-      await api.createWorkflow({
-        project_id: projects[0].id,
-        name,
-        slug: slug || name.toLowerCase().replace(/\s+/g, "-"),
-        nodes: jobId ? [{ job_id: jobId, slug: "step-1" }] : [],
-      });
-      setName("");
-      setSlug("");
-      await refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Erreur");
-    }
+  async function handleCreate() {
+    if (!projects[0]) return;
+    await api.createWorkflow({ project_id: projects[0].id, name, slug });
+    setName("");
+    setSlug("");
+    setShowCreate(false);
+    await refresh();
   }
 
   return (
     <AppShell>
-      <h2 className="text-xl font-bold mb-6">Workflows</h2>
+      <PageHeader
+        title="Workflows"
+        description="Orchestrez vos jobs en graphes DAG"
+        action={
+          <Button onClick={() => setShowCreate(!showCreate)}>
+            <Plus className="h-4 w-4" />
+            Nouveau workflow
+          </Button>
+        }
+      />
 
-      <Card className="p-4 mb-6">
-        <form onSubmit={handleCreate} className="grid gap-3 max-w-lg">
-          <Input placeholder="Nom" value={name} onChange={(e) => setName(e.target.value)} required />
-          <Input placeholder="Slug" value={slug} onChange={(e) => setSlug(e.target.value)} />
-          <select
-            className="bg-background border border-border rounded px-3 py-2"
-            value={jobId}
-            onChange={(e) => setJobId(e.target.value)}
-          >
-            {jobs.map((j) => (
-              <option key={j.id} value={j.id}>{j.name}</option>
-            ))}
-          </select>
-          {error && <p className="text-red-400 text-sm">{error}</p>}
-          <Button type="submit">Créer</Button>
-        </form>
-      </Card>
+      {showCreate && (
+        <Card className="mb-6 border-primary/20">
+          <CardContent className="pt-5 flex flex-wrap gap-4 items-end">
+            <div className="space-y-2">
+              <Label>Nom</Label>
+              <Input
+                value={name}
+                onChange={(e) => {
+                  setName(e.target.value);
+                  setSlug(e.target.value.toLowerCase().replace(/\s+/g, "-"));
+                }}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Slug</Label>
+              <Input value={slug} onChange={(e) => setSlug(e.target.value)} />
+            </div>
+            <Button onClick={handleCreate} disabled={!name}>Créer</Button>
+          </CardContent>
+        </Card>
+      )}
 
-      <div className="space-y-3">
-        {workflows.map((w) => (
-          <Card key={w.id} className="p-4">
-            <Link href={`/workflows/${w.id}`} className="font-medium text-primary hover:underline">{w.name}</Link>
-            <p className="text-sm text-muted">{w.slug} · {w.node_count} nodes</p>
-          </Card>
-        ))}
-        {workflows.length === 0 && <p className="text-muted">Aucun workflow</p>}
-      </div>
+      {workflows.length === 0 ? (
+        <EmptyState
+          icon={Workflow}
+          title="Aucun workflow"
+          description="Enchaînez plusieurs jobs avec des dépendances et conditions."
+          onAction={() => setShowCreate(true)}
+          actionLabel="Créer un workflow"
+        />
+      ) : (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {workflows.map((w) => (
+            <Link key={w.id} href={`/workflows/${w.id}`}>
+              <Card hover className="h-full">
+                <CardContent className="pt-5">
+                  <p className="font-semibold">{w.name}</p>
+                  <p className="text-xs font-mono text-muted-foreground mt-1">{w.slug}</p>
+                  <div className="flex justify-between items-center mt-4">
+                    <span className="text-sm text-muted-foreground">{w.node_count} nœud(s)</span>
+                    <StatusBadge status={w.enabled ? "enabled" : "disabled"} />
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
+          ))}
+        </div>
+      )}
     </AppShell>
   );
 }

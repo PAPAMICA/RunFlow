@@ -82,3 +82,12 @@ class JobFileStorage:
                 self.resolve_path(job_id, f.path).mkdir(parents=True, exist_ok=True)
             elif f.content is not None:
                 self.write_file(job_id, f.path, f.content)
+
+    def sync_overlay_to(self, job_id: str, files: list, target_dir: Path) -> None:
+        """Overlay DB-managed files (e.g. .env) onto a git-synced workspace."""
+        for f in files:
+            if f.is_directory or f.content is None:
+                continue
+            dest = safe_join(target_dir, *f.path.strip("/").split("/"))
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_text(f.content, encoding="utf-8")

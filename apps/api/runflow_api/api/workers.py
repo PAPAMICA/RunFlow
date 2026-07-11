@@ -112,6 +112,8 @@ async def worker_claim(
 
     if job.source_type == SourceType.GIT and job.git_config:
         sync_git_job(job.git_config, job_files_path)
+        if job.files:
+            storage.sync_overlay_to(job.id, job.files, job_files_path)
     else:
         storage.sync_to_disk(job.id, job.files)
 

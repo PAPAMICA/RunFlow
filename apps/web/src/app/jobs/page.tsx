@@ -2,99 +2,121 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { Boxes, GitBranch, Plus } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
+import { EmptyState } from "@/components/EmptyState";
+import { JobDeployForm } from "@/components/JobDeployForm";
+import { PageHeader } from "@/components/PageHeader";
+import { StatusBadge } from "@/components/StatusBadge";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { api, Job, Project } from "@/lib/api";
 
 export default function JobsPage() {
+  const router = useRouter();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
-  const [showCreate, setShowCreate] = useState(false);
-  const [name, setName] = useState("");
-  const [slug, setSlug] = useState("");
+  const [showDeploy, setShowDeploy] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.getJobs().then(setJobs).catch(console.error);
-    api.getProjects().then(setProjects).catch(console.error);
+    Promise.all([api.getJobs(), api.getProjects()])
+      .then(([j, p]) => {
+        setJobs(j);
+        setProjects(p);
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false));
   }, []);
-
-  async function createJob() {
-    if (!projects[0]) return;
-    const job = await api.createJob({
-      project_id: projects[0].id,
-      name,
-      slug,
-      runner_type: "python",
-      entrypoint: "main.py",
-    });
-    setJobs((prev) => [...prev, job]);
-    setShowCreate(false);
-    setName("");
-    setSlug("");
-  }
 
   return (
     <AppShell>
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-xl font-bold">Jobs</h2>
-        <button
-          onClick={() => setShowCreate(true)}
-          className="px-4 py-2 bg-primary text-white rounded text-sm"
-        >
-          Nouveau Job
-        </button>
-      </div>
+      <PageHeader
+        title="Jobs"
+        description="Scripts Python, Bash ou Ansible — internes ou depuis Git"
+        action={
+          <Button onClick={() => setShowDeploy(!showDeploy)}>
+            <Plus className="h-4 w-4" />
+            Déployer un job
+          </Button>
+        }
+      />
 
-      {showCreate && (
-        <div className="mb-6 p-4 bg-card border border-border rounded flex gap-4 items-end">
-          <label>
-            <span className="text-sm text-muted">Nom</span>
-            <input
-              value={name}
-              onChange={(e) => {
-                setName(e.target.value);
-                setSlug(e.target.value.toLowerCase().replace(/\s+/g, "-"));
-              }}
-              className="block mt-1 px-3 py-2 bg-background border border-border rounded"
-            />
-          </label>
-          <label>
-            <span className="text-sm text-muted">Slug</span>
-            <input
-              value={slug}
-              onChange={(e) => setSlug(e.target.value)}
-              className="block mt-1 px-3 py-2 bg-background border border-border rounded"
-            />
-          </label>
-          <button onClick={createJob} className="px-4 py-2 bg-primary text-white rounded text-sm">
-            Créer
-          </button>
-        </div>
+      {showDeploy && projects.length > 0 && (
+        <JobDeployForm
+          projects={projects}
+          onCreated={(id) => router.push(`/jobs/${id}`)}
+          onCancel={() => setShowDeploy(false)}
+        />
       )}
 
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="text-left text-muted border-b border-border">
-            <th className="pb-2">Nom</th>
-            <th className="pb-2">Runner</th>
-            <th className="pb-2">Source</th>
-            <th className="pb-2">Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {jobs.map((j) => (
-            <tr key={j.id} className="border-b border-border/50">
-              <td className="py-2">
-                <Link href={`/jobs/${j.id}`} className="text-primary hover:underline">
-                  {j.name}
-                </Link>
-              </td>
-              <td className="py-2">{j.runner_type}</td>
-              <td className="py-2">{j.source_type}</td>
-              <td className="py-2">{j.enabled ? "enabled" : "disabled"}</td>
-            </tr>
+      {loading ? (
+        <div className="space-y-3">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-16 rounded-xl" />
           ))}
-        </tbody>
-      </table>
+        </div>
+      ) : jobs.length === 0 ? (
+        <EmptyState
+          icon={Boxes}
+          title="Aucun job"
+          description="Déployez un job Git avec script Python, arguments et fichier .env."
+          onAction={() => setShowDeploy(true)}
+          actionLabel="Déployer un job"
+        />
+      ) : (
+        <Card>
+          <CardContent className="pt-5 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-muted-foreground border-b border-border">
+                  <th className="pb-3 font-medium">Nom</th>
+                  <th className="pb-3 font-medium">Source</th>
+                  <th className="pb-3 font-medium">Runner</th>
+                  <th className="pb-3 font-medium">Entrypoint</th>
+                  <th className="pb-3 font-medium">Statut</th>
+                </tr>
+              </thead>
+              <tbody>
+                {jobs.map((j) => (
+                  <tr key={j.id} className="border-b border-border-subtle hover:bg-card-hover/50 transition-colors">
+                    <td className="py-3">
+                      <Link href={`/jobs/${j.id}`} className="font-medium text-primary hover:underline">
+                        {j.name}
+                      </Link>
+                      <p className="text-xs text-muted-foreground font-mono mt-0.5">{j.slug}</p>
+                    </td>
+                    <td className="py-3">
+                      <Badge variant={j.source_type === "git" ? "default" : "muted"}>
+                        {j.source_type === "git" ? (
+                          <span className="flex items-center gap-1"><GitBranch className="h-3 w-3" /> Git</span>
+                        ) : (
+                          "internal"
+                        )}
+                      </Badge>
+                      {j.has_env_file && (
+                        <Badge variant="accent" className="ml-2">.env</Badge>
+                      )}
+                    </td>
+                    <td className="py-3">
+                      <span className="font-mono text-xs bg-card px-2 py-1 rounded border border-border">
+                        {j.runner_type}
+                      </span>
+                    </td>
+                    <td className="py-3 font-mono text-xs text-muted-foreground">{j.entrypoint}</td>
+                    <td className="py-3">
+                      <StatusBadge status={j.enabled ? "enabled" : "disabled"} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+      )}
     </AppShell>
   );
 }

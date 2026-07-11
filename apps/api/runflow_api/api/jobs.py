@@ -12,6 +12,7 @@ from runflow_api.deps import get_auth_context, require_permission
 from runflow_api.db import get_db
 from runflow_api.models import Job, JobFile, JobParameter, Project, Run
 from runflow_api.schemas import (
+    GitConfig,
     JobCreate,
     JobFileCreate,
     JobFileNode,
@@ -32,7 +33,34 @@ from runflow_shared import RunStatus
 router = APIRouter(tags=["jobs"])
 
 
+async def _upsert_env_file(
+    session: AsyncSession, job_id: str, content: str | None, storage: JobFileStorage
+) -> None:
+    """Create, update or remove the overlay .env file for a job."""
+    result = await session.execute(
+        select(JobFile).where(JobFile.job_id == job_id, JobFile.path == ".env")
+    )
+    db_file = result.scalar_one_or_none()
+    if not content or not content.strip():
+        if db_file:
+            await session.delete(db_file)
+        try:
+            storage.delete_path(job_id, ".env")
+        except FileNotFoundError:
+            pass
+        return
+    storage.write_file(job_id, ".env", content)
+    if db_file:
+        db_file.content = content
+    else:
+        session.add(JobFile(id=new_ulid(), job_id=job_id, path=".env", content=content))
+
+
 def _job_to_response(job: Job) -> JobResponse:
+    has_env = any(f.path == ".env" and f.content for f in job.files)
+    git_cfg = None
+    if job.git_config:
+        git_cfg = GitConfig(**job.git_config)
     return JobResponse(
         id=job.id,
         organization_id=job.organization_id,
@@ -51,6 +79,8 @@ def _job_to_response(job: Job) -> JobResponse:
         memory_limit_mb=job.memory_limit_mb,
         cpu_limit=job.cpu_limit,
         enabled=job.enabled,
+        git_config=git_cfg,
+        has_env_file=has_env,
         parameters=[
             {
                 "id": p.id,
@@ -118,7 +148,7 @@ async def list_jobs(
     result = await session.execute(
         select(Job)
         .where(Job.organization_id == auth.organization_id)
-        .options(selectinload(Job.parameters))
+        .options(selectinload(Job.parameters), selectinload(Job.files))
         .order_by(Job.name)
     )
     return [_job_to_response(j) for j in result.scalars().all()]
@@ -138,6 +168,9 @@ async def create_job(
     if not project_result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Project not found")
 
+    if payload.source_type == "git" and not payload.git_config:
+        raise HTTPException(status_code=400, detail="git_config is required for git source jobs")
+
     job = Job(
         id=new_ulid(),
         organization_id=auth.organization_id,
@@ -155,6 +188,7 @@ async def create_job(
         network_mode=payload.network_mode,
         memory_limit_mb=payload.memory_limit_mb,
         cpu_limit=payload.cpu_limit,
+        git_config=payload.git_config.model_dump() if payload.git_config else None,
     )
     session.add(job)
     await session.flush()
@@ -178,7 +212,9 @@ async def create_job(
 
     storage = JobFileStorage()
     storage.ensure_job_root(job.id)
-    await session.refresh(job, attribute_names=["parameters"])
+    if payload.env_file_content:
+        await _upsert_env_file(session, job.id, payload.env_file_content, storage)
+    await session.refresh(job, attribute_names=["parameters", "files"])
     return _job_to_response(job)
 
 
@@ -191,7 +227,7 @@ async def get_job(
     result = await session.execute(
         select(Job)
         .where(Job.id == job_id, Job.organization_id == auth.organization_id)
-        .options(selectinload(Job.parameters))
+        .options(selectinload(Job.parameters), selectinload(Job.files))
     )
     job = result.scalar_one_or_none()
     if not job:
@@ -271,16 +307,49 @@ async def update_job(
     result = await session.execute(
         select(Job)
         .where(Job.id == job_id, Job.organization_id == auth.organization_id)
-        .options(selectinload(Job.parameters))
+        .options(selectinload(Job.parameters), selectinload(Job.files))
     )
     job = result.scalar_one_or_none()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    storage = JobFileStorage()
+    data = payload.model_dump(exclude_unset=True)
+    new_parameters = data.pop("parameters", None)
+    env_content = data.pop("env_file_content", None)
+    if "git_config" in data and data["git_config"] is not None:
+        data["git_config"] = GitConfig(**data["git_config"]).model_dump()
+
+    for field, value in data.items():
         setattr(job, field, value)
+
+    if new_parameters is not None:
+        for param in list(job.parameters):
+            await session.delete(param)
+        await session.flush()
+        for param in new_parameters:
+            session.add(
+                JobParameter(
+                    id=new_ulid(),
+                    job_id=job.id,
+                    name=param["name"],
+                    label=param.get("label"),
+                    description=param.get("description"),
+                    param_type=param.get("param_type", "string"),
+                    required=param.get("required", False),
+                    default_value=param.get("default_value"),
+                    options=param.get("options"),
+                    validation=param.get("validation"),
+                    position=param.get("position", 0),
+                )
+            )
+
+    if env_content is not None:
+        await _upsert_env_file(session, job.id, env_content, storage)
+
     session.add(job)
     await session.flush()
+    await session.refresh(job, attribute_names=["parameters", "files"])
     return _job_to_response(job)
 
 
@@ -291,13 +360,29 @@ async def list_job_files(
     session: AsyncSession = Depends(get_db),
 ):
     result = await session.execute(
-        select(Job).where(Job.id == job_id, Job.organization_id == auth.organization_id)
+        select(Job)
+        .where(Job.id == job_id, Job.organization_id == auth.organization_id)
+        .options(selectinload(Job.files))
     )
     job = result.scalar_one_or_none()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
     storage = JobFileStorage()
+    if job.source_type == "git":
+        nodes: list[JobFileNode] = []
+        if job.git_config:
+            nodes.append(
+                JobFileNode(
+                    path="[git]",
+                    is_directory=False,
+                    content=f"{job.git_config.get('repository_url')} @ {job.git_config.get('branch', 'main')}",
+                )
+            )
+        for f in job.files:
+            nodes.append(JobFileNode(path=f.path, is_directory=f.is_directory, content=f.content))
+        return nodes
+
     tree = storage.list_tree(job_id)
     return [JobFileNode(path=n["path"], is_directory=n["is_directory"]) for n in tree]
 
@@ -310,10 +395,19 @@ async def get_job_file(
     session: AsyncSession = Depends(get_db),
 ):
     result = await session.execute(
-        select(Job).where(Job.id == job_id, Job.organization_id == auth.organization_id)
+        select(Job)
+        .where(Job.id == job_id, Job.organization_id == auth.organization_id)
+        .options(selectinload(Job.files))
     )
-    if not result.scalar_one_or_none():
+    job = result.scalar_one_or_none()
+    if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+
+    if job.source_type == "git":
+        db_file = next((f for f in job.files if f.path == file_path), None)
+        if db_file and db_file.content is not None:
+            return JobFileNode(path=file_path, is_directory=False, content=db_file.content)
+        raise HTTPException(status_code=404, detail="File not found (git source: overlay files only)")
 
     storage = JobFileStorage()
     try:

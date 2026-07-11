@@ -167,20 +167,25 @@ class DockerExecutor(BaseRunner):
         except DockerException as exc:
             return RunOutput(exit_code=1, stderr=str(exc))
 
+    def _env_prefix(self) -> str:
+        return "set -a && [ -f /runflow/job/.env ] && . /runflow/job/.env && set +a; "
+
     def _python_command(self, ctx: RunContext, entrypoint: str) -> list[str]:
+        env_load = self._env_prefix()
         req = Path(ctx.job["job_files_path"]) / "requirements.txt"
         if req.is_file() and req.read_text(encoding="utf-8").strip():
             req_hash = self._requirements_hash(ctx.job["job_files_path"])
             return [
                 "/bin/sh",
                 "-c",
+                f"{env_load}"
                 f"if [ ! -f /cache/venv-{req_hash}/.ready ]; then "
                 f"python -m venv /cache/venv-{req_hash} && "
                 f"/cache/venv-{req_hash}/bin/pip install -q -r /runflow/job/requirements.txt && "
                 f"touch /cache/venv-{req_hash}/.ready; fi && "
                 f"/cache/venv-{req_hash}/bin/python /runflow/job/{entrypoint}",
             ]
-        return ["python", f"/runflow/job/{entrypoint}"]
+        return ["/bin/sh", "-c", f"{env_load}python /runflow/job/{entrypoint}"]
 
     def _ansible_command(self, ctx: RunContext) -> list[str]:
         ansible_cfg = ctx.job.get("ansible_config") or {}
@@ -213,6 +218,14 @@ class DockerExecutor(BaseRunner):
         workspace = Path(ctx.workspace_path) / "job"
         entrypoint = job.get("entrypoint", "main.py")
         env = {**os.environ, **ctx.env}
+        env_file = workspace / ".env"
+        if env_file.is_file():
+            for line in env_file.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                env[key.strip()] = value.strip().strip('"').strip("'")
 
         if job["runner_type"] == RunnerType.BASH:
             cmd = ["bash", str(workspace / entrypoint)]

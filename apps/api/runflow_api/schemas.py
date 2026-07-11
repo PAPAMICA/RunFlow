@@ -60,6 +60,12 @@ class JobParameterResponse(JobParameterCreate):
     id: str
 
 
+class GitConfig(BaseModel):
+    repository_url: str
+    branch: str = "main"
+    path: str = ""
+
+
 class JobCreate(BaseModel):
     project_id: str
     name: str
@@ -75,6 +81,8 @@ class JobCreate(BaseModel):
     network_mode: str = "bridge"
     memory_limit_mb: int = 512
     cpu_limit: float = 1.0
+    git_config: GitConfig | None = None
+    env_file_content: str | None = None
     parameters: list[JobParameterCreate] = Field(default_factory=list)
 
 
@@ -82,9 +90,13 @@ class JobUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
     entrypoint: str | None = None
+    source_type: str | None = None
+    git_config: GitConfig | None = None
+    env_file_content: str | None = None
     timeout_seconds: int | None = None
     enabled: bool | None = None
     result_parser: str | None = None
+    parameters: list[JobParameterCreate] | None = None
 
 
 class JobResponse(BaseModel):
@@ -105,6 +117,8 @@ class JobResponse(BaseModel):
     memory_limit_mb: int
     cpu_limit: float
     enabled: bool
+    git_config: GitConfig | None = None
+    has_env_file: bool = False
     parameters: list[JobParameterResponse] = Field(default_factory=list)
 
 

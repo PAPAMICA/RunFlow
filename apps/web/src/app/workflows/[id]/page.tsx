@@ -1,33 +1,96 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useParams } from "next/navigation";
+import { Play, Workflow } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
+import { PageHeader } from "@/components/PageHeader";
+import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
-import { api } from "@/lib/api";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { api, Workflow as WorkflowType, WorkflowRunInfo } from "@/lib/api";
 
 export default function WorkflowDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const [runs, setRuns] = useState<{ id: string; status: string }[]>([]);
+  const [workflow, setWorkflow] = useState<WorkflowType | null>(null);
+  const [runs, setRuns] = useState<WorkflowRunInfo[]>([]);
+  const [running, setRunning] = useState(false);
+  const [lastResult, setLastResult] = useState<string | null>(null);
 
-  useEffect(() => { api.getWorkflowRuns(id).then(setRuns).catch(console.error); }, [id]);
+  async function refresh() {
+    const [workflows, workflowRuns] = await Promise.all([
+      api.getWorkflows(),
+      api.getWorkflowRuns(id),
+    ]);
+    setWorkflow(workflows.find((w) => w.id === id) ?? null);
+    setRuns(workflowRuns);
+  }
+
+  useEffect(() => { refresh().catch(console.error); }, [id]);
 
   async function runWorkflow() {
-    const result = await api.runWorkflow(id, {});
-    alert(JSON.stringify(result));
-    api.getWorkflowRuns(id).then(setRuns).catch(console.error);
+    setRunning(true);
+    setLastResult(null);
+    try {
+      const result = await api.runWorkflow(id, {});
+      setLastResult(`Workflow lancé : ${result.workflow_run_id.slice(0, 12)}… (${result.status})`);
+      await refresh();
+    } catch (err) {
+      setLastResult(err instanceof Error ? err.message : "Erreur");
+    } finally {
+      setRunning(false);
+    }
   }
 
   return (
     <AppShell>
-      <h2 className="text-xl font-bold mb-4">Workflow {id.slice(0, 8)}...</h2>
-      <Button onClick={runWorkflow} className="mb-6">Lancer le workflow</Button>
-      <h3 className="font-semibold mb-2">Runs</h3>
-      <ul className="space-y-1 text-sm">
-        {runs.map((r) => (
-          <li key={r.id}>{r.id.slice(0, 12)}... — {r.status}</li>
-        ))}
-      </ul>
+      <PageHeader
+        title={workflow?.name ?? `Workflow ${id.slice(0, 8)}…`}
+        description={workflow ? `${workflow.node_count} nœud(s) · ${workflow.slug}` : "Chargement…"}
+        action={
+          <Button onClick={runWorkflow} disabled={running}>
+            <Play className="h-4 w-4" />
+            {running ? "Lancement…" : "Lancer"}
+          </Button>
+        }
+      />
+
+      {lastResult && (
+        <Card className="mb-6 border-primary/20">
+          <CardContent className="pt-4 text-sm text-muted-foreground">{lastResult}</CardContent>
+        </Card>
+      )}
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Workflow className="h-5 w-5 text-primary" />
+            <CardTitle>Exécutions du workflow</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {runs.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-6 text-center">Aucune exécution</p>
+          ) : (
+            <ul className="space-y-2">
+              {runs.map((r) => (
+                <li
+                  key={r.id}
+                  className="flex items-center justify-between rounded-lg border border-border-subtle px-4 py-3 hover:bg-card-hover/50 transition-colors"
+                >
+                  <span className="font-mono text-sm">{r.id.slice(0, 14)}…</span>
+                  <StatusBadge status={r.status} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
+      <p className="text-xs text-muted-foreground mt-6">
+        L&apos;éditeur visuel DAG (React Flow) sera disponible dans une prochaine version.
+      </p>
     </AppShell>
   );
 }

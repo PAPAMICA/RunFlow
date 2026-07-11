@@ -1,6 +1,6 @@
 # PLAN RunFlow
 
-## Statut : Phases 0 à 5 complétées
+## Statut : Phases 0 à 5 complétées · Phase 6 UI en cours
 
 ### Phase 0 - Fondations ✅
 - [x] Monorepo uv (apps/api, apps/worker, packages/python-sdk, packages/runflow-shared)
@@ -61,10 +61,18 @@
 - [x] Ask AI panel (Job Detail)
 - [x] Multi-file changes + validation + Apply
 
-### Web UI étendue ✅
-- [x] Triggers, Secrets, Credentials, Workers, Workflows
-- [x] Formulaires de création (triggers, secrets, workflows)
-- [x] Ask AI intégré dans l'éditeur de job
+### Phase 6 - Interface Web moderne (en cours)
+- [x] Design system (tokens cyan/violet, Inter, glass cards, animations)
+- [x] AppShell refondu (sidebar groupée, icônes lucide, navigation FR)
+- [x] Pages : login split-screen, dashboard KPIs, jobs, runs, triggers, secrets
+- [x] Pages manquantes : inventaires, clés API, paramètres (compte + org)
+- [x] CRUD UI : workers (création + token), credentials (création JSON)
+- [x] Déploiement job Git : formulaire (repo, branche, entrypoint, .env, arguments)
+- [x] Job detail : onglets Source & .env + formulaire run dynamique
+- [ ] Run detail : terminal logs redesign
+- [ ] Éditeur visuel workflow (React Flow)
+- [ ] Page Projects + Mailboxes
+- [ ] Middleware auth Next.js
 
 ## Commandes de vérification
 
@@ -79,6 +87,8 @@ cd apps/web && pnpm typecheck && pnpm build
 ## Flux validé
 
 Créer Job Python → multi-fichiers → arguments → API run → queue → worker → Docker → logs SSE → résultat JSON → UI
+
+Déployer job Git : UI (repo + .env + args) → clone worker → overlay .env → Python avec arguments
 
 Automation : webhook / cron / email → trigger → run
 

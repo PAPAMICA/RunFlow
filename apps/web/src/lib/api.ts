@@ -51,6 +51,8 @@ export const api = {
   getJobRuns: (id: string) => request<Run[]>(`/api/v1/jobs/${id}/runs`),
   createJob: (data: JobCreate) =>
     request<Job>("/api/v1/jobs", { method: "POST", body: JSON.stringify(data) }),
+  updateJob: (id: string, data: JobUpdate) =>
+    request<Job>(`/api/v1/jobs/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   getProjects: () => request<Project[]>("/api/v1/projects"),
   getRuns: (params?: { status?: string; job_id?: string }) => {
     const q = new URLSearchParams(params as Record<string, string>).toString();
@@ -86,6 +88,8 @@ export const api = {
   createSecret: (data: SecretCreate) =>
     request<Secret>("/api/v1/secrets", { method: "POST", body: JSON.stringify(data) }),
   getCredentials: () => request<Credential[]>("/api/v1/credentials"),
+  createCredential: (data: CredentialCreate) =>
+    request<Credential>("/api/v1/credentials", { method: "POST", body: JSON.stringify(data) }),
   getWorkers: () => request<WorkerInfo[]>("/api/v1/workers"),
   createWorker: (data: { name: string; labels?: Record<string, string> }) =>
     request<{ id: string; name: string; token: string }>("/api/v1/workers", {
@@ -112,6 +116,15 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ job_id: jobId, changes }),
     }),
+
+  getMe: () => request<User>("/api/v1/auth/me"),
+  getOrganization: () => request<Organization>("/api/v1/auth/organization"),
+  getInventories: () => request<Inventory[]>("/api/v1/inventories"),
+  createInventory: (data: InventoryCreate) =>
+    request<Inventory>("/api/v1/inventories", { method: "POST", body: JSON.stringify(data) }),
+  getApiKeys: () => request<ApiKey[]>("/api/v1/api-keys"),
+  createApiKey: (data: ApiKeyCreate) =>
+    request<ApiKeyCreated>("/api/v1/api-keys", { method: "POST", body: JSON.stringify(data) }),
 };
 
 export interface DashboardStats {
@@ -132,10 +145,19 @@ export interface JobParameter {
   id: string;
   name: string;
   label?: string;
+  description?: string;
   param_type: string;
   required: boolean;
   default_value?: unknown;
   options?: string[];
+  validation?: Record<string, unknown>;
+  position?: number;
+}
+
+export interface GitConfig {
+  repository_url: string;
+  branch?: string;
+  path?: string;
 }
 
 export interface Job {
@@ -147,8 +169,21 @@ export interface Job {
   source_type: string;
   entrypoint: string;
   enabled: boolean;
+  git_config?: GitConfig | null;
+  has_env_file?: boolean;
   parameters: JobParameter[];
   project_id: string;
+}
+
+export interface JobParameterInput {
+  name: string;
+  label?: string;
+  description?: string;
+  param_type?: string;
+  required?: boolean;
+  default_value?: unknown;
+  options?: string[];
+  position?: number;
 }
 
 export interface JobCreate {
@@ -156,8 +191,22 @@ export interface JobCreate {
   name: string;
   slug: string;
   runner_type?: string;
+  source_type?: string;
   entrypoint?: string;
-  parameters?: Omit<JobParameter, "id">[];
+  git_config?: GitConfig;
+  env_file_content?: string;
+  parameters?: JobParameterInput[];
+}
+
+export interface JobUpdate {
+  name?: string;
+  description?: string;
+  entrypoint?: string;
+  source_type?: string;
+  git_config?: GitConfig;
+  env_file_content?: string;
+  parameters?: JobParameterInput[];
+  enabled?: boolean;
 }
 
 export interface JobFileNode {
@@ -179,7 +228,15 @@ export interface TriggerCreate { name: string; trigger_type: string; target_id: 
 export interface Secret { id: string; name: string; scope: string }
 export interface SecretCreate { name: string; value: string; scope?: string }
 export interface Credential { id: string; name: string; credential_type: string }
-export interface WorkerInfo { id: string; name: string; status: string; labels: Record<string, string>; current_runs: number }
+export interface CredentialCreate { name: string; credential_type: string; data: Record<string, unknown>; project_id?: string }
+export interface WorkerInfo { id: string; name: string; status: string; labels: Record<string, string>; current_runs: number; hostname?: string; version?: string; last_seen_at?: string }
+export interface User { id: string; email: string; enabled: boolean }
+export interface Organization { id: string; name: string; slug: string }
+export interface Inventory { id: string; name: string; source_type: string }
+export interface InventoryCreate { name: string; source_type?: string; content?: string; project_id?: string }
+export interface ApiKey { id: string; name: string; prefix: string; scopes: string[]; enabled: boolean }
+export interface ApiKeyCreate { name: string; scopes?: string[]; project_id?: string }
+export interface ApiKeyCreated extends ApiKey { key: string }
 export interface Workflow { id: string; name: string; slug: string; node_count: number; enabled: boolean }
 export interface WorkflowCreate { project_id: string; name: string; slug: string; nodes?: { job_id: string; slug: string }[] }
 export interface WorkflowRunInfo { id: string; status: string }
