@@ -94,7 +94,14 @@ def validate_job_arguments(
     errors: dict[str, str] = {}
     validated: dict[str, Any] = {}
 
-    for param in sorted(parameters, key=lambda p: p.position):
+    # Disabled parameters are ignored entirely: not validated, not required and
+    # any provided value is dropped. Only an explicit ``False`` disables a
+    # parameter (a not-yet-persisted model may expose ``enabled`` as ``None``).
+    active_params = [p for p in parameters if getattr(p, "enabled", True) is not False]
+    disabled_names = {p.name for p in parameters if getattr(p, "enabled", True) is False}
+    arguments = {k: v for k, v in arguments.items() if k not in disabled_names}
+
+    for param in sorted(active_params, key=lambda p: p.position):
         raw = arguments.get(param.name)
         if raw is None and param.name not in arguments:
             raw = None
@@ -103,7 +110,7 @@ def validate_job_arguments(
         except (ValueError, ValidationError, json.JSONDecodeError) as exc:
             errors[param.name] = str(exc)
 
-    param_names = {p.name for p in parameters}
+    param_names = {p.name for p in active_params}
     extra = set(arguments.keys()) - param_names
     for key in extra:
         if key in forced:

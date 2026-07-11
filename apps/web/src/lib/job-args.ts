@@ -49,7 +49,9 @@ export function getForcedArgumentKeys(job: Job): Set<string> {
 
 export function getUserFacingParameters(job: Job): JobParameter[] {
   const forced = getForcedArgumentKeys(job);
-  return job.parameters.filter((p) => !forced.has(p.name));
+  return job.parameters.filter(
+    (p) => p.enabled !== false && !forced.has(p.name)
+  );
 }
 
 export function canLaunchDirectly(job: Job): boolean {

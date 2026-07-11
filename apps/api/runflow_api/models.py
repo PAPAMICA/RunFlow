@@ -170,6 +170,7 @@ class JobParameter(Base, TimestampMixin):
     options: Mapped[list[str] | None] = mapped_column(JSONB)
     validation: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     position: Mapped[int] = mapped_column(Integer, default=0)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
 
     job: Mapped[Job] = relationship(back_populates="parameters")
 

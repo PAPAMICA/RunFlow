@@ -160,6 +160,7 @@ async def worker_claim(
                 "label": p.label,
             }
             for p in sorted(job.parameters, key=lambda x: x.position)
+            if p.enabled
         ],
     }
 

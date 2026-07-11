@@ -7,7 +7,14 @@ from runflow_api.models import JobParameter
 from runflow_shared import ParameterType
 
 
-def _param(name: str, ptype: str, required: bool = False, options: list | None = None, default=None):
+def _param(
+    name: str,
+    ptype: str,
+    required: bool = False,
+    options: list | None = None,
+    default=None,
+    enabled: bool = True,
+):
     return JobParameter(
         id="01TEST",
         job_id="01JOB",
@@ -17,7 +24,25 @@ def _param(name: str, ptype: str, required: bool = False, options: list | None =
         options=options,
         default_value=default,
         position=0,
+        enabled=enabled,
     )
+
+
+def test_disabled_param_is_ignored():
+    params = [
+        _param("domain", ParameterType.STRING, required=True),
+        _param("legacy", ParameterType.STRING, required=True, enabled=False),
+    ]
+    # 'legacy' is required but disabled -> no error, and its value is dropped.
+    result = validate_job_arguments(params, {"domain": "x", "legacy": "ignored"})
+    assert result["domain"] == "x"
+    assert "legacy" not in result
+
+
+def test_disabled_flag_type():
+    params = [_param("verbose", ParameterType.FLAG, enabled=True)]
+    result = validate_job_arguments(params, {"verbose": "true"})
+    assert result["verbose"] is True
 
 
 def test_validate_string_required():

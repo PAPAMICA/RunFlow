@@ -54,6 +54,7 @@ class JobParameterCreate(BaseModel):
     options: list[str] | None = None
     validation: dict[str, Any] | None = None
     position: int = 0
+    enabled: bool = True
 
 
 class JobParameterResponse(JobParameterCreate):

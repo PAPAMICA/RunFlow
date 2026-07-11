@@ -215,6 +215,7 @@ export interface JobParameter {
   options?: string[];
   validation?: Record<string, unknown>;
   position?: number;
+  enabled?: boolean;
 }
 
 export interface GitConfig {
@@ -301,6 +302,7 @@ export interface JobParameterInput {
   default_value?: unknown;
   options?: string[];
   position?: number;
+  enabled?: boolean;
 }
 
 export interface JobCreate {

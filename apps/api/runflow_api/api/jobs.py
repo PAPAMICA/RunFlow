@@ -146,6 +146,7 @@ def _job_to_response(job: Job) -> JobResponse:
                 "options": p.options,
                 "validation": p.validation,
                 "position": p.position,
+                "enabled": p.enabled,
             }
             for p in sorted(job.parameters, key=lambda x: x.position)
         ],
@@ -289,6 +290,7 @@ async def create_job(
                 options=param.options,
                 validation=param.validation,
                 position=param.position,
+                enabled=param.enabled,
             )
         )
 
@@ -430,6 +432,7 @@ async def update_job(
                     options=param.get("options"),
                     validation=param.get("validation"),
                     position=param.get("position", 0),
+                    enabled=param.get("enabled", True),
                 )
             )
 

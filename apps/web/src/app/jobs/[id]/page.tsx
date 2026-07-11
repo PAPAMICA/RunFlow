@@ -20,6 +20,7 @@ import { AppShell } from "@/components/AppShell";
 import { DataTable } from "@/components/DataTable";
 import { EmptyState } from "@/components/EmptyState";
 import { ForcedArgumentsEditor } from "@/components/ForcedArgumentsEditor";
+import { JobParametersEditor } from "@/components/JobParametersEditor";
 import { FavoriteButton } from "@/components/FavoriteButton";
 import { JobNotificationsForm } from "@/components/JobNotificationsForm";
 import { JobRunForm } from "@/components/JobRunForm";
@@ -526,7 +527,8 @@ export default function JobDetailPage() {
       )}
 
       {tab === "parameters" && (
-        <div className="space-y-6 max-w-2xl">
+        <div className="space-y-6 max-w-3xl">
+          <JobParametersEditor job={job} onSaved={setJob} />
           <ForcedArgumentsEditor
             job={job}
             onSave={async (forced) => {
@@ -534,27 +536,6 @@ export default function JobDetailPage() {
               setJob(updated);
             }}
           />
-          <Card>
-            <CardContent className="pt-5 space-y-3">
-              <p className="text-sm font-medium">Paramètres détectés</p>
-              {job.parameters.length === 0 ? (
-                <p className="text-muted-foreground text-sm">
-                  Aucun paramètre — les arguments forcés suffisent pour lancer le job.
-                </p>
-              ) : (
-                job.parameters.map((p) => (
-                  <div key={p.id} className="rounded-lg border border-border-subtle p-3">
-                    <p className="font-medium font-mono">{p.name}</p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {p.label} · {p.param_type}
-                      {p.required && " · requis"}
-                      {job.forced_arguments?.[p.name] !== undefined && " · forcé"}
-                    </p>
-                  </div>
-                ))
-              )}
-            </CardContent>
-          </Card>
         </div>
       )}
 
