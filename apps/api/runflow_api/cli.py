@@ -12,7 +12,12 @@ from runflow_api import __version__
 from runflow_api.core.security import hash_password
 from runflow_api.db import async_session_factory
 from runflow_api.models import Organization, OrganizationMember, Project, User, Worker
-from runflow_api.utils import generate_registration_token, hash_registration_token, new_ulid
+from runflow_api.utils import (
+    generate_registration_token,
+    generate_worker_token,
+    hash_registration_token,
+    new_ulid,
+)
 from runflow_shared import UserRole, WorkerStatus
 
 app = typer.Typer(name="runflow", help="RunFlow administration CLI")
@@ -93,6 +98,47 @@ def worker_create_registration_token(
             typer.echo(f"Registration token (shown once): {reg_token}")
             typer.echo("On the worker host, run:")
             typer.echo(f"  runflow-worker register --server <API_URL> --registration-token {reg_token}")
+
+    asyncio.run(_run())
+
+
+@app.command("worker-create")
+def worker_create(
+    name: str = typer.Option("server-worker", "--name"),
+    org_id: str | None = typer.Option(None, "--org-id"),
+    token_only: bool = typer.Option(False, "--token-only", help="Print only the worker token (for scripts)"),
+):
+    """Create a worker with an immediate auth token (no registration step)."""
+
+    async def _run() -> str:
+        async with async_session_factory() as session:
+            resolved_org_id = org_id
+            if not resolved_org_id:
+                result = await session.execute(select(Organization).limit(1))
+                org = result.scalar_one_or_none()
+                if not org:
+                    typer.echo("No organization found. Run create-admin first.", err=True)
+                    raise typer.Exit(1)
+                resolved_org_id = org.id
+
+            full_token, prefix, token_hash = generate_worker_token()
+            worker = Worker(
+                id=new_ulid(),
+                organization_id=resolved_org_id,
+                name=name,
+                token_prefix=prefix,
+                token_hash=token_hash,
+                status=WorkerStatus.OFFLINE,
+            )
+            session.add(worker)
+            await session.commit()
+            if token_only:
+                typer.echo(full_token)
+            else:
+                typer.echo(f"Worker created: {name}")
+                typer.echo(f"Worker ID: {worker.id}")
+                typer.echo(f"Token (shown once): {full_token}")
+            return full_token
 
     asyncio.run(_run())
 

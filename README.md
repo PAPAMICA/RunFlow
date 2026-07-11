@@ -109,17 +109,23 @@ Toutes les données sont en **bind mount** sur l'hôte (`data/`), sans volume Do
 ### Serveur (derrière Traefik)
 
 ```bash
-# Prérequis : réseau Traefik existant
-docker network create proxy
-
 cp deploy/.env.server.example .env
-# Éditer : RUNFLOW_WEB_HOST, RUNFLOW_API_HOST, secrets, POSTGRES_PASSWORD
+# Éditer RUNFLOW_WEB_HOST, RUNFLOW_API_HOST, CORS_ORIGINS, NEXT_PUBLIC_API_URL
 
-mkdir -p data/postgres data/runflow
+./deploy/deploy-server.sh
+```
+
+Le script `deploy/deploy-server.sh` automatise :
+- génération des secrets (JWT, master key, postgres, admin)
+- build des runners + stack Docker
+- création admin + worker intégré avec token
+
+```bash
+# Manuel (équivalent)
+docker network create proxy
+mkdir -p data/postgres data/runflow data/worker-server
+./deploy/build-runners.sh
 docker compose -f deploy/docker-compose.server.yml up -d --build
-
-docker compose -f deploy/docker-compose.server.yml exec api \
-  runflow create-admin --email admin@runflow.local
 ```
 
 Traefik expose :
