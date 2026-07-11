@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,6 +15,8 @@ from runflow_api.db import get_db
 from runflow_api.models import Job, JobFile, JobParameter, Project, Run
 from runflow_api.schemas import (
     GitConfig,
+    GitPreviewRequest,
+    GitPreviewResponse,
     JobCreate,
     JobFileCreate,
     JobFileNode,
@@ -27,6 +31,7 @@ from runflow_api.schemas import (
 )
 from runflow_api.api.runs import _run_to_response
 from runflow_api.services.job_files import JobFileStorage
+from runflow_api.services.git_preview import build_git_preview
 from runflow_api.utils import new_ulid
 from runflow_shared import RunStatus
 
@@ -152,6 +157,24 @@ async def list_jobs(
         .order_by(Job.name)
     )
     return [_job_to_response(j) for j in result.scalars().all()]
+
+
+@router.post("/jobs/git-preview", response_model=GitPreviewResponse)
+async def preview_git_source(
+    payload: GitPreviewRequest,
+    auth: AuthContext = Depends(require_permission("job:read")),
+):
+    del auth
+    try:
+        preview = await asyncio.to_thread(
+            build_git_preview,
+            payload.git_config.model_dump(),
+            payload.runner_type,
+            payload.entrypoint,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return GitPreviewResponse(**preview)
 
 
 @router.post("/jobs", response_model=JobResponse, status_code=201)

@@ -51,6 +51,11 @@ export const api = {
   getJobRuns: (id: string) => request<Run[]>(`/api/v1/jobs/${id}/runs`),
   createJob: (data: JobCreate) =>
     request<Job>("/api/v1/jobs", { method: "POST", body: JSON.stringify(data) }),
+  previewGitJob: (data: GitPreviewRequest) =>
+    request<GitPreviewResponse>("/api/v1/jobs/git-preview", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
   updateJob: (id: string, data: JobUpdate) =>
     request<Job>(`/api/v1/jobs/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   getProjects: () => request<Project[]>("/api/v1/projects"),
@@ -158,6 +163,26 @@ export interface GitConfig {
   repository_url: string;
   branch?: string;
   path?: string;
+}
+
+export interface GitPreviewRequest {
+  git_config: GitConfig;
+  runner_type?: string;
+  entrypoint?: string;
+}
+
+export interface GitPreviewFile {
+  path: string;
+  is_directory: boolean;
+}
+
+export interface GitPreviewResponse {
+  files: GitPreviewFile[];
+  env_example_path?: string | null;
+  env_example_content?: string | null;
+  suggested_entrypoints: string[];
+  detected_parameters: JobParameterInput[];
+  entrypoint?: string | null;
 }
 
 export interface Job {

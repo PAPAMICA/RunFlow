@@ -66,6 +66,26 @@ class GitConfig(BaseModel):
     path: str = ""
 
 
+class GitPreviewRequest(BaseModel):
+    git_config: GitConfig
+    runner_type: str = "python"
+    entrypoint: str | None = None
+
+
+class GitPreviewFile(BaseModel):
+    path: str
+    is_directory: bool
+
+
+class GitPreviewResponse(BaseModel):
+    files: list[GitPreviewFile] = Field(default_factory=list)
+    env_example_path: str | None = None
+    env_example_content: str | None = None
+    suggested_entrypoints: list[str] = Field(default_factory=list)
+    detected_parameters: list[JobParameterCreate] = Field(default_factory=list)
+    entrypoint: str | None = None
+
+
 class JobCreate(BaseModel):
     project_id: str
     name: str

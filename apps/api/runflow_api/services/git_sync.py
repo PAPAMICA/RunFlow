@@ -17,8 +17,8 @@ def _repo_hash(url: str) -> str:
     return hashlib.sha256(url.encode()).hexdigest()[:16]
 
 
-def sync_git_job(git_config: dict, workspace_job_dir: Path) -> Path:
-    """Fetch git repo and copy to isolated workspace. Returns job dir path."""
+def get_git_worktree(git_config: dict) -> Path:
+    """Fetch git repo and return the effective source directory (cached)."""
     settings = get_settings()
     url = git_config["repository_url"]
     branch = git_config.get("branch", "main")
@@ -35,6 +35,12 @@ def sync_git_job(git_config: dict, workspace_job_dir: Path) -> Path:
         subprocess.run(["git", "clone", "--branch", branch, url, str(cache_dir)], check=True, capture_output=True)
 
     src = cache_dir / subpath if subpath else cache_dir
+    return src
+
+
+def sync_git_job(git_config: dict, workspace_job_dir: Path) -> Path:
+    """Fetch git repo and copy to isolated workspace. Returns job dir path."""
+    src = get_git_worktree(git_config)
     if workspace_job_dir.exists():
         shutil.rmtree(workspace_job_dir)
     shutil.copytree(src, workspace_job_dir)
