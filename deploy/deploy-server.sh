@@ -32,6 +32,9 @@ load_env() {
     JWT_SECRET="${JWT_SECRET//$'\r'/}"
     RUNFLOW_MASTER_KEY="${RUNFLOW_MASTER_KEY//$'\r'/}"
     RUNFLOW_ADMIN_PASSWORD="${RUNFLOW_ADMIN_PASSWORD//$'\r'/}"
+    RUNFLOW_WEB_HOST="${RUNFLOW_WEB_HOST//$'\r'/}"
+    RUNFLOW_API_HOST="${RUNFLOW_API_HOST//$'\r'/}"
+    CORS_ORIGINS="${CORS_ORIGINS//$'\r'/}"
   fi
 }
 
@@ -59,6 +62,7 @@ docker_run_api() {
   network="$(postgres_container_network)"
   [[ -n "$network" ]] || die "Réseau Docker introuvable pour ${POSTGRES_CONTAINER}"
   docker run --rm \
+    --entrypoint "" \
     --network "$network" \
     -e "POSTGRES_HOST=${POSTGRES_CONTAINER}" \
     -e "POSTGRES_PORT=${POSTGRES_PORT}" \
@@ -147,13 +151,31 @@ ensure_generated_secrets() {
     load_env
   fi
 
-  if [[ -n "${RUNFLOW_WEB_HOST:-}" ]]; then
-    patch_env_var "CORS_ORIGINS" "https://${RUNFLOW_WEB_HOST}"
+  sync_web_urls
+}
+
+normalize_host() {
+  local host="$1"
+  host="${host#https://}"
+  host="${host#http://}"
+  host="${host%%/*}"
+  printf "%s" "$host"
+}
+
+sync_web_urls() {
+  if [[ -z "${RUNFLOW_WEB_HOST:-}" ]]; then
+    return 0
   fi
+  RUNFLOW_WEB_HOST="$(normalize_host "$RUNFLOW_WEB_HOST")"
+  patch_env_var "RUNFLOW_WEB_HOST" "$RUNFLOW_WEB_HOST"
+  patch_env_var "CORS_ORIGINS" "https://${RUNFLOW_WEB_HOST}"
   if [[ -n "${RUNFLOW_API_HOST:-}" ]]; then
+    RUNFLOW_API_HOST="$(normalize_host "$RUNFLOW_API_HOST")"
+    patch_env_var "RUNFLOW_API_HOST" "$RUNFLOW_API_HOST"
     patch_env_var "NEXT_PUBLIC_API_URL" "https://${RUNFLOW_API_HOST}"
   fi
   load_env
+  log "CORS : https://${RUNFLOW_WEB_HOST}"
 }
 
 validate_env() {
@@ -212,6 +234,22 @@ wait_for_api() {
   log "Derniers logs API :"
   docker logs --tail 40 runflow_api 2>&1 || true
   die "L'API n'a pas démarré dans le délai imparti"
+}
+
+verify_api_cors() {
+  log "Vérification CORS API..."
+  local origins
+  origins="$($COMPOSE exec -T api /app/.venv/bin/python -c \
+    "from runflow_api.config import get_settings; print(','.join(get_settings().cors_origin_list))" \
+    2>/dev/null || true)"
+  if [[ -z "$origins" ]]; then
+    log "Impossible de lire la config CORS depuis l'API"
+    return 0
+  fi
+  log "Origines CORS API : ${origins}"
+  if [[ "$origins" != *"${RUNFLOW_WEB_HOST}"* ]]; then
+    die "CORS non configuré pour https://${RUNFLOW_WEB_HOST} — vérifiez RUNFLOW_WEB_HOST dans .env"
+  fi
 }
 
 users_table_exists() {
@@ -417,8 +455,10 @@ main() {
   run_db_migrations
 
   log "Démarrage de l'API..."
-  $COMPOSE up -d api
+  export_compose_env
+  $COMPOSE up -d --force-recreate api
   wait_for_api
+  verify_api_cors
 
   log "Démarrage de l'interface web..."
   $COMPOSE up -d --build web
@@ -435,7 +475,7 @@ main() {
   echo "=============================================="
   echo " RunFlow déployé avec succès"
   echo "=============================================="
-  echo " Web  : https://${RUNFLOW_WEB_HOST}"
+  echo " Web  : https://${RUNFLOW_WEB_HOST}/login"
   echo " API  : https://${RUNFLOW_API_HOST}"
   echo " Admin: ${RUNFLOW_ADMIN_EMAIL:-admin@runflow.local}"
   echo "        (mot de passe dans .env → RUNFLOW_ADMIN_PASSWORD)"
