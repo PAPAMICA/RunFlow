@@ -64,7 +64,9 @@ class GitConfig(BaseModel):
     repository_url: str
     branch: str = "main"
     path: str = ""
+    username: str | None = None
     access_token: str | None = None
+    credential_id: str | None = None
 
 
 class GitPreviewRequest(BaseModel):

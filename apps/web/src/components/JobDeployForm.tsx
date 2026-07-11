@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Boxes,
   FileCode,
@@ -12,13 +12,19 @@ import {
   Trash2,
 } from "lucide-react";
 import { EnvEditor } from "@/components/EnvEditor";
+import {
+  buildGitAuthPayload,
+  GitAuthMode,
+  GitAuthSection,
+  validateGitAuth,
+} from "@/components/GitAuthSection";
 import { GitPreviewTree } from "@/components/GitPreviewTree";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
-import { api, GitPreviewResponse, JobParameterInput, Project } from "@/lib/api";
+import { api, Credential, GitPreviewResponse, JobParameterInput, Project } from "@/lib/api";
 import { envExampleToText } from "@/lib/env-file";
 import { cn } from "@/lib/utils";
 
@@ -55,6 +61,10 @@ export function JobDeployForm({ projects, onCreated, onCancel }: JobDeployFormPr
   const [branch, setBranch] = useState("main");
   const [repoPath, setRepoPath] = useState("");
   const [gitToken, setGitToken] = useState("");
+  const [gitUsername, setGitUsername] = useState("");
+  const [gitAuthMode, setGitAuthMode] = useState<GitAuthMode>("token");
+  const [gitCredentialId, setGitCredentialId] = useState("");
+  const [credentials, setCredentials] = useState<Credential[]>([]);
   const [entrypoint, setEntrypoint] = useState("main.py");
   const [envContent, setEnvContent] = useState("");
   const [parameters, setParameters] = useState<JobParameterInput[]>([]);
@@ -64,6 +74,16 @@ export function JobDeployForm({ projects, onCreated, onCancel }: JobDeployFormPr
   const [loading, setLoading] = useState(false);
 
   const sourceType: SourceType = useGit ? "git" : "internal";
+
+  useEffect(() => {
+    if (useGit) {
+      api.getCredentials().then(setCredentials).catch(console.error);
+    }
+  }, [useGit]);
+
+  function gitAuthConfig() {
+    return buildGitAuthPayload(gitAuthMode, gitUsername, gitToken, gitCredentialId, repoUrl);
+  }
 
   function selectRunner(type: RunnerType) {
     setRunnerType(type);
@@ -93,14 +113,18 @@ export function JobDeployForm({ projects, onCreated, onCancel }: JobDeployFormPr
       setError("Indiquez l'URL du dépôt Git");
       return;
     }
+    const authError = validateGitAuth(gitAuthMode, gitToken, gitCredentialId);
+    if (authError) {
+      setError(authError);
+      return;
+    }
     setError("");
     setSyncing(true);
     try {
       const data = await api.previewGitJob({
-        git_config: { repository_url: repoUrl, branch, path: repoPath },
+        git_config: { repository_url: repoUrl, branch, path: repoPath, ...gitAuthConfig() },
         runner_type: runnerType,
         entrypoint: entrypoint || undefined,
-        access_token: gitToken.trim() || undefined,
       });
       applyPreview(data);
     } catch (err) {
@@ -116,10 +140,9 @@ export function JobDeployForm({ projects, onCreated, onCancel }: JobDeployFormPr
     if (!useGit || !repoUrl.trim()) return;
     try {
       const data = await api.previewGitJob({
-        git_config: { repository_url: repoUrl, branch, path: repoPath },
+        git_config: { repository_url: repoUrl, branch, path: repoPath, ...gitAuthConfig() },
         runner_type: runnerType,
         entrypoint: path,
-        access_token: gitToken.trim() || undefined,
       });
       setPreview((prev) => (prev ? { ...prev, ...data } : data));
       if (data.detected_parameters.length) {
@@ -132,6 +155,11 @@ export function JobDeployForm({ projects, onCreated, onCancel }: JobDeployFormPr
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    const authError = validateGitAuth(gitAuthMode, gitToken, gitCredentialId);
+    if (useGit && authError) {
+      setError(authError);
+      return;
+    }
     setError("");
     setLoading(true);
     try {
@@ -147,7 +175,7 @@ export function JobDeployForm({ projects, onCreated, onCancel }: JobDeployFormPr
               repository_url: repoUrl,
               branch,
               path: repoPath,
-              access_token: gitToken.trim() || undefined,
+              ...gitAuthConfig(),
             }
           : undefined,
         env_file_content: envContent.trim() ? envContent : undefined,
@@ -307,21 +335,20 @@ export function JobDeployForm({ projects, onCreated, onCancel }: JobDeployFormPr
                   </div>
                 </div>
 
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                  <div className="space-y-2 sm:col-span-2">
-                    <Label htmlFor="git-token">Token Git (optionnel)</Label>
-                    <Input
-                      id="git-token"
-                      type="password"
-                      value={gitToken}
-                      onChange={(e) => setGitToken(e.target.value)}
-                      placeholder="Pour dépôts privés (GitHub/GitLab)"
-                      autoComplete="off"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Utilisez une URL HTTPS. Les URLs SSH (git@…) ne sont pas supportées.
-                    </p>
-                  </div>
+                <GitAuthSection
+                  repoUrl={repoUrl}
+                  mode={gitAuthMode}
+                  onModeChange={setGitAuthMode}
+                  username={gitUsername}
+                  onUsernameChange={setGitUsername}
+                  token={gitToken}
+                  onTokenChange={setGitToken}
+                  credentialId={gitCredentialId}
+                  onCredentialIdChange={setGitCredentialId}
+                  credentials={credentials}
+                />
+
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   <div className="space-y-2">
                     <Label htmlFor="git-branch">Branche</Label>
                     <Input id="git-branch" value={branch} onChange={(e) => setBranch(e.target.value)} />

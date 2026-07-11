@@ -32,6 +32,7 @@ from runflow_api.schemas import (
 )
 from runflow_api.api.runs import _run_to_response
 from runflow_api.services.job_files import JobFileStorage
+from runflow_api.services.git_auth import resolve_git_config_auth
 from runflow_api.services.git_preview import build_git_preview
 from runflow_api.utils import new_ulid
 from runflow_shared import RunStatus
@@ -166,15 +167,18 @@ async def list_jobs(
 async def preview_git_source(
     payload: GitPreviewRequest,
     auth: AuthContext = Depends(require_permission("job:read")),
+    session: AsyncSession = Depends(get_db),
 ):
-    del auth
+    cfg = payload.git_config.model_dump(exclude_none=True)
+    if payload.access_token:
+        cfg["access_token"] = payload.access_token
     try:
+        cfg = await resolve_git_config_auth(session, auth.organization_id, cfg)
         preview = await asyncio.to_thread(
             build_git_preview,
-            payload.git_config.model_dump(exclude={"access_token"}),
+            cfg,
             payload.runner_type,
             payload.entrypoint,
-            payload.access_token or payload.git_config.access_token,
         )
     except ValueError as exc:
         logger.warning("git-preview rejected: %s", exc)

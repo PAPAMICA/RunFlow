@@ -30,6 +30,7 @@ from runflow_api.services.queue import claim_next_run, transition_run
 from runflow_api.utils import generate_worker_token, hash_registration_token, utcnow
 from runflow_api.services.credentials import resolve_credentials_for_run
 from runflow_api.services.git_sync import sync_git_job
+from runflow_api.services.git_auth import resolve_git_config_auth
 from runflow_api.services.secrets import resolve_secrets_for_run
 from runflow_shared import RunStatus, SourceType, WorkerStatus
 
@@ -111,7 +112,8 @@ async def worker_claim(
     job_files_path = storage.job_root(job.id)
 
     if job.source_type == SourceType.GIT and job.git_config:
-        sync_git_job(job.git_config, job_files_path)
+        git_cfg = await resolve_git_config_auth(session, job.organization_id, dict(job.git_config))
+        sync_git_job(git_cfg, job_files_path)
         if job.files:
             storage.sync_overlay_to(job.id, job.files, job_files_path)
     else:

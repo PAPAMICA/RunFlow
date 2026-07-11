@@ -79,12 +79,10 @@ def build_git_preview(
     git_config: dict,
     runner_type: str = "python",
     entrypoint: str | None = None,
-    access_token: str | None = None,
 ) -> dict:
     """Clone/fetch repo and return preview metadata for the job creation UI."""
-    cfg = {**git_config, "access_token": access_token or git_config.get("access_token")}
     try:
-        root = get_git_worktree(cfg)
+        root = get_git_worktree(git_config)
     except RuntimeError as exc:
         logger.warning("git-preview failed for %s: %s", git_config.get("repository_url"), exc)
         raise ValueError(str(exc)) from exc

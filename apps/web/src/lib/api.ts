@@ -163,7 +163,9 @@ export interface GitConfig {
   repository_url: string;
   branch?: string;
   path?: string;
+  username?: string;
   access_token?: string;
+  credential_id?: string;
 }
 
 export interface GitPreviewRequest {
