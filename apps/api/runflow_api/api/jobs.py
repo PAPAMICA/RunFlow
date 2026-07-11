@@ -18,6 +18,7 @@ from runflow_api.models import (
     Job,
     JobFile,
     JobParameter,
+    Organization,
     Project,
     Run,
     Trigger,
@@ -47,6 +48,7 @@ from runflow_api.schemas import (
 from runflow_api.services.notifications import (
     notification_config_to_response,
     parse_notification_config,
+    resolve_smtp_settings,
     send_test_notification,
 )
 from runflow_api.api.runs import _run_to_response
@@ -707,5 +709,11 @@ async def test_job_notification(
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    success, message = await send_test_notification(job, payload.channel)
+    org_result = await session.execute(
+        select(Organization).where(Organization.id == auth.organization_id)
+    )
+    org = org_result.scalar_one_or_none()
+    smtp = resolve_smtp_settings(org.smtp_config if org else None)
+
+    success, message = await send_test_notification(job, payload.channel, smtp)
     return NotificationTestResponse(channel=payload.channel, success=success, message=message)

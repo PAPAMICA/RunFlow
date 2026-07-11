@@ -170,6 +170,36 @@ class NotificationTestResponse(BaseModel):
     message: str
 
 
+class SmtpConfigUpdate(BaseModel):
+    enabled: bool = False
+    host: str = ""
+    port: int = 587
+    username: str = ""
+    password: str | None = None
+    from_email: str = ""
+    use_tls: bool = True
+
+
+class SmtpConfigResponse(BaseModel):
+    enabled: bool = False
+    host: str = ""
+    port: int = 587
+    username: str = ""
+    from_email: str = ""
+    use_tls: bool = True
+    password_set: bool = False
+    source: Literal["org", "env", "none"] = "none"
+
+
+class SmtpTestRequest(BaseModel):
+    recipient: EmailStr
+
+
+class SmtpTestResponse(BaseModel):
+    success: bool
+    message: str
+
+
 class JobResponse(BaseModel):
     id: str
     organization_id: str

@@ -14,7 +14,8 @@ from fastapi.responses import JSONResponse
 from runflow_api import __version__
 from runflow_api.api import (
     ai, api_keys, auth, credentials, dashboard, health, hooks, inventories,
-    jobs, mailboxes, metrics, runs, secrets, triggers, workers, workers_admin, workflows,
+    jobs, mailboxes, metrics, runs, secrets, settings as settings_api, triggers,
+    workers, workers_admin, workflows,
 )
 from runflow_api.config import get_settings
 from runflow_api.logging_config import setup_logging
@@ -118,6 +119,7 @@ def create_app() -> FastAPI:
     app.include_router(mailboxes.router, prefix="/api/v1")
     app.include_router(inventories.router, prefix="/api/v1")
     app.include_router(ai.router, prefix="/api/v1")
+    app.include_router(settings_api.router, prefix="/api/v1")
 
     return app
 

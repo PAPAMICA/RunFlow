@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Building2, User } from "lucide-react";
+import { Building2, Mail, User } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
+import { SmtpSettingsForm } from "@/components/SmtpSettingsForm";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, Organization, User as UserType } from "@/lib/api";
@@ -27,7 +28,7 @@ export default function SettingsPage() {
     <AppShell>
       <PageHeader
         title="Paramètres"
-        description="Compte et organisation"
+        description="Compte, organisation et notifications"
       />
 
       <div className="grid gap-6 md:grid-cols-2 max-w-3xl">
@@ -88,6 +89,27 @@ export default function SettingsPage() {
                 </div>
               </dl>
             ) : null}
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="mt-6 max-w-3xl">
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-3">
+              <div className="rounded-lg bg-primary/10 p-2">
+                <Mail className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <CardTitle>SMTP — Notifications email</CardTitle>
+                <CardDescription>
+                  Serveur d&apos;envoi utilisé pour les notifications par email des jobs
+                </CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <SmtpSettingsForm />
           </CardContent>
         </Card>
       </div>

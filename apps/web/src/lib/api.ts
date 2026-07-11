@@ -182,6 +182,17 @@ export const api = {
 
   getMe: () => request<User>("/api/v1/auth/me"),
   getOrganization: () => request<Organization>("/api/v1/auth/organization"),
+  getSmtpConfig: () => request<SmtpConfigResponse>("/api/v1/settings/smtp"),
+  updateSmtpConfig: (data: SmtpConfigInput) =>
+    request<SmtpConfigResponse>("/api/v1/settings/smtp", {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+  testSmtpConfig: (recipient: string) =>
+    request<{ success: boolean; message: string }>("/api/v1/settings/smtp/test", {
+      method: "POST",
+      body: JSON.stringify({ recipient }),
+    }),
   getInventories: () => request<Inventory[]>("/api/v1/inventories"),
   createInventory: (data: InventoryCreate) =>
     request<Inventory>("/api/v1/inventories", { method: "POST", body: JSON.stringify(data) }),
@@ -397,6 +408,27 @@ export interface CredentialCreate { name: string; credential_type: string; data:
 export interface WorkerInfo { id: string; name: string; status: string; labels: Record<string, string>; current_runs: number; hostname?: string; version?: string; last_seen_at?: string }
 export interface User { id: string; email: string; enabled: boolean }
 export interface Organization { id: string; name: string; slug: string }
+
+export interface SmtpConfigResponse {
+  enabled: boolean;
+  host: string;
+  port: number;
+  username: string;
+  from_email: string;
+  use_tls: boolean;
+  password_set: boolean;
+  source: "org" | "env" | "none";
+}
+
+export interface SmtpConfigInput {
+  enabled: boolean;
+  host: string;
+  port: number;
+  username: string;
+  password?: string;
+  from_email: string;
+  use_tls: boolean;
+}
 export interface Inventory { id: string; name: string; source_type: string }
 export interface InventoryCreate { name: string; source_type?: string; content?: string; project_id?: string }
 export interface ApiKey { id: string; name: string; prefix: string; scopes: string[]; enabled: boolean }

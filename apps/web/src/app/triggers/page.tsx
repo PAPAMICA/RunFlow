@@ -7,6 +7,7 @@ import {
   GitBranch,
   Link2,
   Mail,
+  Pencil,
   Plus,
   RefreshCw,
   Trash2,
@@ -41,6 +42,7 @@ export default function TriggersPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [mailboxes, setMailboxes] = useState<Mailbox[]>([]);
   const [showCreate, setShowCreate] = useState(false);
+  const [editing, setEditing] = useState<Trigger | null>(null);
   const [showMailbox, setShowMailbox] = useState(false);
   const [mailboxName, setMailboxName] = useState("");
   const [mailboxHost, setMailboxHost] = useState("");
@@ -102,7 +104,12 @@ export default function TriggersPage() {
               <Mail className="h-4 w-4" />
               Mailbox IMAP
             </Button>
-            <Button onClick={() => setShowCreate(!showCreate)}>
+            <Button
+              onClick={() => {
+                setEditing(null);
+                setShowCreate((s) => !s);
+              }}
+            >
               <Plus className="h-4 w-4" />
               Nouveau trigger
             </Button>
@@ -145,18 +152,32 @@ export default function TriggersPage() {
         </Card>
       )}
 
-      {showCreate && (
+      {(showCreate || editing) && (
         <Card className="mb-6 border-primary/20">
           <CardContent className="pt-5">
             <TriggerForm
+              key={editing?.id ?? "new"}
               jobs={jobs}
               mailboxes={mailboxes}
+              trigger={editing ?? undefined}
               onSubmit={async (data) => {
-                await api.createTrigger(data);
+                if (editing) {
+                  await api.updateTrigger(editing.id, {
+                    name: data.name,
+                    target_id: data.target_id,
+                    config: data.config,
+                  });
+                } else {
+                  await api.createTrigger(data);
+                }
                 setShowCreate(false);
+                setEditing(null);
                 await refresh();
               }}
-              onCancel={() => setShowCreate(false)}
+              onCancel={() => {
+                setShowCreate(false);
+                setEditing(null);
+              }}
             />
           </CardContent>
         </Card>
@@ -222,6 +243,19 @@ export default function TriggersPage() {
                     </Button>
                     <Button variant="outline" size="sm" onClick={() => toggleEnabled(t)}>
                       {t.enabled ? "Désactiver" : "Activer"}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      title="Modifier"
+                      onClick={() => {
+                        setShowCreate(false);
+                        setTestId(null);
+                        setEditing(t);
+                        window.scrollTo({ top: 0, behavior: "smooth" });
+                      }}
+                    >
+                      <Pencil className="h-4 w-4" />
                     </Button>
                     <Button variant="outline" size="icon" onClick={() => deleteTrigger(t.id)}>
                       <Trash2 className="h-4 w-4 text-destructive" />

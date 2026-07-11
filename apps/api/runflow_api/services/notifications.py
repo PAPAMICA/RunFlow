@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import smtplib
+from dataclasses import dataclass
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
@@ -16,7 +17,7 @@ from sqlalchemy.orm import selectinload
 
 from runflow_api.config import get_settings
 from runflow_api.db import async_session_factory
-from runflow_api.models import Job, Run
+from runflow_api.models import Job, Organization, Run
 from runflow_api.schemas import JobNotificationConfig
 from runflow_shared import RunStatus
 
@@ -70,6 +71,42 @@ STATUS_META = {
         "emoji": "⏹️",
     },
 }
+
+
+@dataclass
+class SmtpSettings:
+    host: str = ""
+    port: int = 587
+    username: str = ""
+    password: str = ""
+    from_email: str = ""
+    use_tls: bool = True
+
+    @property
+    def configured(self) -> bool:
+        return bool(self.host and self.from_email)
+
+
+def resolve_smtp_settings(org_smtp: dict | None) -> SmtpSettings:
+    """Effective SMTP settings: organization config (if enabled) overrides env vars."""
+    if org_smtp and org_smtp.get("enabled"):
+        return SmtpSettings(
+            host=(org_smtp.get("host") or "").strip(),
+            port=int(org_smtp.get("port") or 587),
+            username=org_smtp.get("username") or "",
+            password=org_smtp.get("password") or "",
+            from_email=(org_smtp.get("from_email") or "").strip(),
+            use_tls=bool(org_smtp.get("use_tls", True)),
+        )
+    settings = get_settings()
+    return SmtpSettings(
+        host=settings.smtp_host,
+        port=settings.smtp_port,
+        username=settings.smtp_user,
+        password=settings.smtp_password,
+        from_email=settings.smtp_from,
+        use_tls=settings.smtp_use_tls,
+    )
 
 
 def parse_notification_config(raw: dict | None) -> JobNotificationConfig:
@@ -201,35 +238,38 @@ def render_email_text(context: dict) -> str:
     return "\n".join(lines)
 
 
-def _send_smtp_sync(recipients: list[str], subject: str, html: str, text: str) -> None:
-    settings = get_settings()
-    if not settings.smtp_host:
-        raise RuntimeError("SMTP non configuré (SMTP_HOST manquant)")
-    if not settings.smtp_from:
-        raise RuntimeError("SMTP non configuré (SMTP_FROM manquant)")
+def _send_smtp_sync(
+    smtp: SmtpSettings, recipients: list[str], subject: str, html: str, text: str
+) -> None:
+    if not smtp.host:
+        raise RuntimeError("SMTP non configuré (hôte manquant)")
+    if not smtp.from_email:
+        raise RuntimeError("SMTP non configuré (adresse d'expéditeur manquante)")
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
-    msg["From"] = settings.smtp_from
+    msg["From"] = smtp.from_email
     msg["To"] = ", ".join(recipients)
     msg.attach(MIMEText(text, "plain", "utf-8"))
     msg.attach(MIMEText(html, "html", "utf-8"))
 
-    if settings.smtp_use_tls:
-        with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=30) as server:
+    with smtplib.SMTP(smtp.host, smtp.port, timeout=30) as server:
+        if smtp.use_tls:
             server.starttls()
-            if settings.smtp_user:
-                server.login(settings.smtp_user, settings.smtp_password)
-            server.sendmail(settings.smtp_from, recipients, msg.as_string())
-    else:
-        with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=30) as server:
-            if settings.smtp_user:
-                server.login(settings.smtp_user, settings.smtp_password)
-            server.sendmail(settings.smtp_from, recipients, msg.as_string())
+        if smtp.username:
+            server.login(smtp.username, smtp.password)
+        server.sendmail(smtp.from_email, recipients, msg.as_string())
 
 
-async def send_email(recipients: list[str], subject: str, html: str, text: str) -> None:
-    await asyncio.to_thread(_send_smtp_sync, recipients, subject, html, text)
+async def send_email(
+    recipients: list[str],
+    subject: str,
+    html: str,
+    text: str,
+    smtp: SmtpSettings | None = None,
+) -> None:
+    smtp = smtp or resolve_smtp_settings(None)
+    await asyncio.to_thread(_send_smtp_sync, smtp, recipients, subject, html, text)
 
 
 async def send_pushover(
@@ -263,7 +303,9 @@ async def send_pushover(
         raise RuntimeError(f"Pushover HTTP {resp.status_code}: {resp.text[:200]}")
 
 
-async def deliver_notifications_for_job(job: Job, run: Run) -> None:
+async def deliver_notifications_for_job(
+    job: Job, run: Run, smtp: SmtpSettings | None = None
+) -> None:
     config = parse_notification_config(job.notification_config)
     if not should_notify(config, run.status):
         return
@@ -278,7 +320,7 @@ async def deliver_notifications_for_job(job: Job, run: Run) -> None:
             text = render_email_text(context)
             tasks.append(
                 asyncio.create_task(
-                    send_email(recipients, context["subject"], html, text)
+                    send_email(recipients, context["subject"], html, text, smtp)
                 )
             )
 
@@ -302,7 +344,9 @@ async def deliver_notifications_for_job(job: Job, run: Run) -> None:
             logger.exception("Notification delivery failed for run %s", run.id)
 
 
-async def send_test_notification(job: Job, channel: str) -> tuple[bool, str]:
+async def send_test_notification(
+    job: Job, channel: str, smtp: SmtpSettings | None = None
+) -> tuple[bool, str]:
     config = parse_notification_config(job.notification_config)
     context = _build_context(job, None, test=True)
 
@@ -318,6 +362,7 @@ async def send_test_notification(job: Job, channel: str) -> tuple[bool, str]:
                 context["subject"],
                 render_email_html(context),
                 render_email_text(context),
+                smtp,
             )
             return True, f"Email de test envoyé à {', '.join(recipients)}"
 
@@ -357,4 +402,9 @@ async def _deliver_notifications(run_id: str) -> None:
             return
         if run.status not in TERMINAL_NOTIFY_STATUSES:
             return
-        await deliver_notifications_for_job(run.job, run)
+        org_result = await session.execute(
+            select(Organization).where(Organization.id == run.job.organization_id)
+        )
+        org = org_result.scalar_one_or_none()
+        smtp = resolve_smtp_settings(org.smtp_config if org else None)
+        await deliver_notifications_for_job(run.job, run, smtp)

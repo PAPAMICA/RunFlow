@@ -46,6 +46,7 @@ class Organization(Base, TimestampMixin):
     id: Mapped[str] = mapped_column(String(26), primary_key=True, default=new_ulid)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     slug: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    smtp_config: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
 
     projects: Mapped[list[Project]] = relationship(back_populates="organization")
     members: Mapped[list[OrganizationMember]] = relationship(back_populates="organization")
