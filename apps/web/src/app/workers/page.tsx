@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Copy, Plus, Server } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { EmptyState } from "@/components/EmptyState";
+import { FormPanel } from "@/components/FormPanel";
 import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
@@ -70,15 +71,15 @@ export default function WorkersPage() {
       )}
 
       {showCreate && (
-        <Card className="mb-6 border-primary/20">
-          <CardContent className="pt-5 flex gap-4 items-end max-w-md">
+        <FormPanel title="Nouveau worker" description="Génère un token d'enregistrement pour l'agent" onClose={() => setShowCreate(false)}>
+          <div className="flex gap-4 items-end max-w-md">
             <div className="flex-1 space-y-2">
               <Label>Nom du worker</Label>
               <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="worker-prod-01" />
             </div>
             <Button onClick={handleCreate} disabled={!name}>Créer</Button>
-          </CardContent>
-        </Card>
+          </div>
+        </FormPanel>
       )}
 
       {!loading && workers.length === 0 ? (

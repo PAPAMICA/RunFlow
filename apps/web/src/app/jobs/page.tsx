@@ -1,18 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Boxes, GitBranch, Plus } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
+import { DataTable, DataTableSkeleton } from "@/components/DataTable";
 import { EmptyState } from "@/components/EmptyState";
 import { JobDeployForm } from "@/components/JobDeployForm";
 import { PageHeader } from "@/components/PageHeader";
+import { SearchInput } from "@/components/SearchInput";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
 import { api, Job, Project } from "@/lib/api";
 
 export default function JobsPage() {
@@ -20,6 +21,7 @@ export default function JobsPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [showDeploy, setShowDeploy] = useState(false);
+  const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -32,13 +34,24 @@ export default function JobsPage() {
       .finally(() => setLoading(false));
   }, []);
 
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return jobs;
+    return jobs.filter(
+      (j) =>
+        j.name.toLowerCase().includes(q) ||
+        j.slug.toLowerCase().includes(q) ||
+        j.entrypoint.toLowerCase().includes(q)
+    );
+  }, [jobs, search]);
+
   return (
     <AppShell>
       <PageHeader
         title="Jobs"
         description="Scripts Python, Bash ou Ansible — internes ou depuis Git"
         action={
-          <Button onClick={() => setShowDeploy(!showDeploy)}>
+          <Button onClick={() => setShowDeploy(!showDeploy)} size="lg">
             <Plus className="h-4 w-4" />
             Déployer un job
           </Button>
@@ -53,12 +66,22 @@ export default function JobsPage() {
         />
       )}
 
-      {loading ? (
-        <div className="space-y-3">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-16 rounded-xl" />
-          ))}
+      {!loading && jobs.length > 0 && (
+        <div className="mb-4 max-w-sm">
+          <SearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder="Filtrer par nom, slug ou entrypoint…"
+          />
         </div>
+      )}
+
+      {loading ? (
+        <Card>
+          <CardContent className="pt-5">
+            <DataTableSkeleton />
+          </CardContent>
+        </Card>
       ) : jobs.length === 0 ? (
         <EmptyState
           icon={Boxes}
@@ -67,53 +90,63 @@ export default function JobsPage() {
           onAction={() => setShowDeploy(true)}
           actionLabel="Déployer un job"
         />
+      ) : filtered.length === 0 ? (
+        <Card>
+          <CardContent className="py-12 text-center text-sm text-muted-foreground">
+            Aucun job ne correspond à « {search} »
+          </CardContent>
+        </Card>
       ) : (
         <Card>
-          <CardContent className="pt-5 overflow-x-auto">
-            <table className="w-full text-sm">
+          <CardContent className="pt-5">
+            <DataTable>
               <thead>
-                <tr className="text-left text-muted-foreground border-b border-border">
-                  <th className="pb-3 font-medium">Nom</th>
-                  <th className="pb-3 font-medium">Source</th>
-                  <th className="pb-3 font-medium">Runner</th>
-                  <th className="pb-3 font-medium">Entrypoint</th>
-                  <th className="pb-3 font-medium">Statut</th>
+                <tr>
+                  <th>Nom</th>
+                  <th>Source</th>
+                  <th>Runner</th>
+                  <th>Entrypoint</th>
+                  <th>Statut</th>
                 </tr>
               </thead>
               <tbody>
-                {jobs.map((j) => (
-                  <tr key={j.id} className="border-b border-border-subtle hover:bg-card-hover/50 transition-colors">
-                    <td className="py-3">
-                      <Link href={`/jobs/${j.id}`} className="font-medium text-primary hover:underline">
+                {filtered.map((j) => (
+                  <tr key={j.id}>
+                    <td>
+                      <Link href={`/jobs/${j.id}`} className="link-primary">
                         {j.name}
                       </Link>
                       <p className="text-xs text-muted-foreground font-mono mt-0.5">{j.slug}</p>
                     </td>
-                    <td className="py-3">
-                      <Badge variant={j.source_type === "git" ? "default" : "muted"}>
-                        {j.source_type === "git" ? (
-                          <span className="flex items-center gap-1"><GitBranch className="h-3 w-3" /> Git</span>
-                        ) : (
-                          "internal"
-                        )}
-                      </Badge>
-                      {j.has_env_file && (
-                        <Badge variant="accent" className="ml-2">.env</Badge>
-                      )}
+                    <td>
+                      <div className="flex flex-wrap gap-1.5">
+                        <Badge variant={j.source_type === "git" ? "default" : "muted"}>
+                          {j.source_type === "git" ? (
+                            <span className="flex items-center gap-1">
+                              <GitBranch className="h-3 w-3" /> Git
+                            </span>
+                          ) : (
+                            "internal"
+                          )}
+                        </Badge>
+                        {j.has_env_file && <Badge variant="accent">.env</Badge>}
+                      </div>
                     </td>
-                    <td className="py-3">
-                      <span className="font-mono text-xs bg-card px-2 py-1 rounded border border-border">
+                    <td>
+                      <span className="font-mono text-xs bg-background/80 px-2 py-1 rounded-md border border-border">
                         {j.runner_type}
                       </span>
                     </td>
-                    <td className="py-3 font-mono text-xs text-muted-foreground">{j.entrypoint}</td>
-                    <td className="py-3">
+                    <td className="font-mono text-xs text-muted-foreground max-w-[200px] truncate">
+                      {j.entrypoint}
+                    </td>
+                    <td>
                       <StatusBadge status={j.enabled ? "enabled" : "disabled"} />
                     </td>
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </DataTable>
           </CardContent>
         </Card>
       )}

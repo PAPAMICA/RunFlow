@@ -7,9 +7,11 @@ import { useParams, useRouter } from "next/navigation";
 import { GitBranch, Play, Save } from "lucide-react";
 import { AskAIPanel } from "@/components/AskAIPanel";
 import { AppShell } from "@/components/AppShell";
+import { DataTable } from "@/components/DataTable";
 import { JobRunForm } from "@/components/JobRunForm";
 import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
+import { Tabs } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -129,7 +131,11 @@ export default function JobDetailPage() {
   if (!job) {
     return (
       <AppShell>
-        <p className="text-muted-foreground">Chargement…</p>
+        <div className="space-y-4 animate-pulse">
+          <div className="h-8 w-48 bg-card rounded-lg" />
+          <div className="h-4 w-72 bg-card rounded" />
+          <div className="h-64 bg-card rounded-xl" />
+        </div>
       </AppShell>
     );
   }
@@ -148,28 +154,24 @@ export default function JobDetailPage() {
       <PageHeader
         title={job.name}
         description={`${job.slug} · ${job.runner_type} · ${job.source_type}`}
+        breadcrumb={[
+          { label: "Jobs", href: "/jobs" },
+          { label: job.name },
+        ]}
         action={
-          <Button onClick={() => setTab("run")}>
+          <Button onClick={() => setTab("run")} size="lg">
             <Play className="h-4 w-4" />
             Lancer
           </Button>
         }
       />
 
-      <div className="flex flex-wrap gap-1 mb-6 border-b border-border pb-px">
-        {tabs.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={`px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors ${
-              tab === t.key
-                ? "bg-card border border-border border-b-transparent text-primary"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
+      <div className="mb-6 pb-2 border-b border-border">
+        <Tabs
+          items={tabs.map((t) => ({ key: t.key, label: t.label }))}
+          active={tab}
+          onChange={(k) => setTab(k as Tab)}
+        />
       </div>
 
       {tab === "overview" && (
@@ -328,31 +330,31 @@ export default function JobDetailPage() {
 
       {tab === "runs" && (
         <Card>
-          <CardContent className="pt-5 overflow-x-auto">
-            <table className="w-full text-sm">
+          <CardContent className="pt-5">
+            <DataTable>
               <thead>
-                <tr className="text-left text-muted-foreground border-b border-border">
-                  <th className="pb-3">ID</th>
-                  <th className="pb-3">Statut</th>
-                  <th className="pb-3">Durée</th>
-                  <th className="pb-3">Date</th>
+                <tr>
+                  <th>ID</th>
+                  <th>Statut</th>
+                  <th>Durée</th>
+                  <th>Date</th>
                 </tr>
               </thead>
               <tbody>
                 {jobRuns.map((r) => (
-                  <tr key={r.id} className="border-b border-border-subtle">
-                    <td className="py-2">
-                      <Link href={`/runs/${r.id}`} className="text-primary hover:underline font-mono">
+                  <tr key={r.id}>
+                    <td>
+                      <Link href={`/runs/${r.id}`} className="link-mono text-xs">
                         {r.id.slice(0, 10)}…
                       </Link>
                     </td>
-                    <td className="py-2"><StatusBadge status={r.status} /></td>
-                    <td className="py-2">{r.duration_seconds?.toFixed(1) ?? "—"}s</td>
-                    <td className="py-2">{new Date(r.queued_at).toLocaleString("fr-FR")}</td>
+                    <td><StatusBadge status={r.status} /></td>
+                    <td className="text-muted-foreground tabular-nums">{r.duration_seconds?.toFixed(1) ?? "—"}s</td>
+                    <td className="text-muted-foreground text-xs">{new Date(r.queued_at).toLocaleString("fr-FR")}</td>
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </DataTable>
           </CardContent>
         </Card>
       )}

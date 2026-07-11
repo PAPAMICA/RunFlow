@@ -17,15 +17,15 @@ export function EmptyState({
   actionLabel?: string;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center py-16 px-4 text-center rounded-xl border border-dashed border-border bg-card/40">
-      <div className="rounded-2xl bg-primary/10 p-4 mb-4">
-        <Icon className="h-8 w-8 text-primary" />
+    <div className="flex flex-col items-center justify-center py-20 px-6 text-center rounded-xl border border-dashed border-border/80 bg-card/30">
+      <div className="rounded-2xl bg-gradient-to-br from-primary/15 to-accent/10 p-5 mb-5 ring-1 ring-primary/10">
+        <Icon className="h-9 w-9 text-primary" />
       </div>
       <h3 className="text-lg font-semibold">{title}</h3>
-      <p className="text-sm text-muted-foreground mt-2 max-w-sm">{description}</p>
+      <p className="text-sm text-muted-foreground mt-2 max-w-md leading-relaxed">{description}</p>
       {action}
       {onAction && actionLabel && (
-        <Button onClick={onAction} className="mt-6">
+        <Button onClick={onAction} className="mt-6" size="lg">
           {actionLabel}
         </Button>
       )}

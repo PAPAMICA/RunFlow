@@ -103,17 +103,25 @@ class WorkerAgent:
         run_id = claim["run_id"]
         job = claim["job"]
         workspace_path = str(Path(self.settings.runs_dir) / run_id)
+        log_queue: asyncio.Queue[str | None] = asyncio.Queue()
+        drain_task: asyncio.Task | None = None
         try:
             await self.client.accept(run_id)
             await self._push_system_log(run_id, "Run accepté — préparation du workspace")
 
             loop = asyncio.get_running_loop()
 
+            async def _drain_system_logs() -> None:
+                while True:
+                    message = await log_queue.get()
+                    if message is None:
+                        break
+                    await self._push_system_log(run_id, message)
+
+            drain_task = asyncio.create_task(_drain_system_logs())
+
             def on_system_log(message: str) -> None:
-                asyncio.run_coroutine_threadsafe(
-                    self._push_system_log(run_id, message),
-                    loop,
-                )
+                loop.call_soon_threadsafe(log_queue.put_nowait, message)
 
             ctx = RunContext(
                 run_id=run_id,
@@ -123,6 +131,10 @@ class WorkerAgent:
                 on_system_log=on_system_log,
             )
             output = await self.executor.run(ctx)
+
+            await log_queue.put(None)
+            await drain_task
+            drain_task = None
 
             log_entries = getattr(ctx, "_log_entries", [])
             if log_entries:
@@ -149,4 +161,7 @@ class WorkerAgent:
             except Exception:
                 logger.exception("Failed to report failure for %s", run_id)
         finally:
+            if drain_task is not None:
+                await log_queue.put(None)
+                await drain_task
             self._current_runs -= 1

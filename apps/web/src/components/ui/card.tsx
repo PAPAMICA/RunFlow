@@ -12,8 +12,8 @@ export function Card({
   return (
     <div
       className={cn(
-        "rounded-xl border border-border bg-card/90 backdrop-blur-sm",
-        hover && "transition-colors hover:bg-card-hover hover:border-border/80",
+        "rounded-xl border border-border bg-card/90 backdrop-blur-sm glow-subtle",
+        hover && "transition-all hover:bg-card-hover hover:border-primary/15 cursor-default",
         className
       )}
     >

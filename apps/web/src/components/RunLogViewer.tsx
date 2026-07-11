@@ -42,7 +42,7 @@ export function RunLogViewer({
   }, [logs]);
 
   return (
-    <div className="flex flex-col h-full min-h-[420px] rounded-xl border border-border overflow-hidden bg-[#0a0a0f]">
+    <div className="flex flex-col h-full min-h-[420px] rounded-xl border border-border overflow-hidden bg-[#08080c] glow-subtle">
       <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-border bg-card/60">
         <div className="flex items-center gap-2 text-sm">
           <span className="font-medium">Logs</span>

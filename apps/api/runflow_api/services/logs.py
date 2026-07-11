@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from runflow_api.core.secret_redaction import SecretRedactor
-from runflow_api.models import RunLog
+from runflow_api.models import Run, RunLog
 from runflow_api.services.valkey import publish_run_log
 from runflow_api.utils import new_ulid, utcnow
 
@@ -39,7 +39,12 @@ async def append_logs(
     entries: list[dict],
     redactor: SecretRedactor | None = None,
 ) -> list[RunLog]:
+    if not entries:
+        return []
+
     redactor = redactor or SecretRedactor()
+    # Verrouille le run pour éviter les collisions de sequence en cas de pushes concurrents.
+    await session.execute(select(Run).where(Run.id == run_id).with_for_update())
     result = await session.execute(
         select(func.coalesce(func.max(RunLog.sequence), 0)).where(RunLog.run_id == run_id)
     )

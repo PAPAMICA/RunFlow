@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { ArrowLeft, Clock, Copy, RefreshCw } from "lucide-react";
+import { Clock, Copy, RefreshCw } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
 import { RunLogViewer } from "@/components/RunLogViewer";
@@ -67,16 +67,6 @@ export default function RunDetailPage() {
 
   return (
     <AppShell>
-      <div className="mb-4">
-        <Link
-          href={job ? `/jobs/${job.id}` : "/runs"}
-          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          {job ? `Retour à ${job.name}` : "Retour aux exécutions"}
-        </Link>
-      </div>
-
       <PageHeader
         title={job ? job.name : "Exécution"}
         description={
@@ -84,6 +74,11 @@ export default function RunDetailPage() {
             ? `${job.slug} · ${job.runner_type} · ${job.entrypoint}`
             : `Run ${id.slice(0, 12)}…`
         }
+        breadcrumb={[
+          { label: "Exécutions", href: "/runs" },
+          ...(job ? [{ label: job.name, href: `/jobs/${job.id}` }] : []),
+          { label: id.slice(0, 10) + "…" },
+        ]}
         action={
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={copyRunId}>
