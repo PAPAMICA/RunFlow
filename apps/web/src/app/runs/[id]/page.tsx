@@ -280,7 +280,7 @@ export default function RunDetailPage() {
         </div>
 
         {/* Encart résultat / erreur */}
-        {isTerminal && <RunOutcome run={run} />}
+        {isTerminal && <RunOutcome run={run} logs={logs} />}
 
         {/* Logs + panneau latéral */}
         <div
@@ -375,11 +375,22 @@ export default function RunDetailPage() {
   );
 }
 
-function RunOutcome({ run }: { run: Run }) {
+function RunOutcome({
+  run,
+  logs,
+}: {
+  run: Run;
+  logs: { stream: string; message: string }[];
+}) {
   const success = run.status === "success";
   const hasResult = run.result != null && Object.keys(run.result as object).length > 0;
 
   if (success) {
+    const stdout = logs
+      .filter((l) => l.stream === "stdout")
+      .map((l) => l.message)
+      .join("\n");
+
     return (
       <Card className="border-success/30 bg-success/5">
         <CardContent className="py-4 space-y-3">
@@ -394,16 +405,23 @@ function RunOutcome({ run }: { run: Run }) {
               )}
             </h3>
           </div>
-          {hasResult ? (
+          {stdout ? (
             <div>
-              <p className="text-xs text-muted-foreground mb-1.5">Sortie du script</p>
-              <pre className="text-xs font-mono bg-black/30 rounded-lg p-3 overflow-auto max-h-64 whitespace-pre-wrap break-all">
+              <p className="text-xs text-muted-foreground mb-1.5">Sortie du script (stdout)</p>
+              <pre className="text-xs font-mono bg-black/30 rounded-lg p-3 overflow-auto max-h-80 whitespace-pre-wrap break-words">
+                {stdout}
+              </pre>
+            </div>
+          ) : hasResult ? (
+            <div>
+              <p className="text-xs text-muted-foreground mb-1.5">Résultat</p>
+              <pre className="text-xs font-mono bg-black/30 rounded-lg p-3 overflow-auto max-h-80 whitespace-pre-wrap break-words">
                 {JSON.stringify(run.result, null, 2)}
               </pre>
             </div>
           ) : (
             <p className="text-xs text-muted-foreground">
-              Le script s&apos;est terminé avec succès. Consultez les logs ci-dessous pour la sortie complète.
+              Le script s&apos;est terminé avec succès sans produire de sortie standard.
             </p>
           )}
         </CardContent>

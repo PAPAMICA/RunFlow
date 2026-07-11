@@ -195,11 +195,15 @@ function parseJsonMapping(raw: string | undefined): Record<string, unknown> {
   }
 }
 
-export function getHookUrl(hookToken: string, apiBase?: string): string {
-  const base =
+export function getApiBase(apiBase?: string): string {
+  return (
     apiBase ||
     (typeof window !== "undefined"
       ? process.env.NEXT_PUBLIC_API_URL || window.location.origin.replace(/:\d+$/, ":8000")
-      : "http://localhost:8000");
-  return `${base}/api/v1/hooks/${hookToken}`;
+      : "http://localhost:8000")
+  );
+}
+
+export function getHookUrl(hookToken: string, apiBase?: string): string {
+  return `${getApiBase(apiBase)}/api/v1/hooks/${hookToken}`;
 }

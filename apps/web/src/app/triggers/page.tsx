@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   Clock,
+  FlaskConical,
   GitBranch,
   Link2,
   Mail,
@@ -15,6 +16,7 @@ import {
 import { AppShell } from "@/components/AppShell";
 import { EmptyState } from "@/components/EmptyState";
 import { HookUrlCopy, TriggerForm } from "@/components/TriggerForm";
+import { TriggerTestGuide } from "@/components/TriggerTestGuide";
 import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
 import { TRIGGER_TYPES } from "@/lib/trigger-types";
@@ -44,6 +46,7 @@ export default function TriggersPage() {
   const [mailboxHost, setMailboxHost] = useState("");
   const [mailboxUser, setMailboxUser] = useState("");
   const [mailboxPassword, setMailboxPassword] = useState("");
+  const [testId, setTestId] = useState<string | null>(null);
 
   async function refresh() {
     const [t, j, m] = await Promise.all([
@@ -174,7 +177,8 @@ export default function TriggersPage() {
             const meta = TRIGGER_TYPES.find((x) => x.id === t.trigger_type);
             return (
               <Card key={t.id} hover>
-                <CardContent className="pt-5 flex flex-wrap justify-between gap-4">
+                <CardContent className="pt-5">
+                  <div className="flex flex-wrap justify-between gap-4">
                   <div className="flex gap-3 min-w-0 flex-1">
                     <div className="rounded-lg bg-primary/10 p-2.5 shrink-0 h-fit">
                       <Icon className="h-4 w-4 text-primary" />
@@ -208,6 +212,14 @@ export default function TriggersPage() {
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <StatusBadge status={t.enabled ? "enabled" : "disabled"} />
+                    <Button
+                      variant={testId === t.id ? "secondary" : "outline"}
+                      size="sm"
+                      onClick={() => setTestId((cur) => (cur === t.id ? null : t.id))}
+                    >
+                      <FlaskConical className="h-4 w-4" />
+                      Tester
+                    </Button>
                     <Button variant="outline" size="sm" onClick={() => toggleEnabled(t)}>
                       {t.enabled ? "Désactiver" : "Activer"}
                     </Button>
@@ -215,6 +227,8 @@ export default function TriggersPage() {
                       <Trash2 className="h-4 w-4 text-destructive" />
                     </Button>
                   </div>
+                  </div>
+                  {testId === t.id && <TriggerTestGuide trigger={t} jobs={jobs} />}
                 </CardContent>
               </Card>
             );

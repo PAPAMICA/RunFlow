@@ -11,8 +11,19 @@ import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { api, Run } from "@/lib/api";
+import { api, Job, Run } from "@/lib/api";
 import { cn, formatDuration, relativeTime } from "@/lib/utils";
+
+function formatTrigger(type: string) {
+  const labels: Record<string, string> = {
+    manual: "Manuel",
+    api: "API",
+    schedule: "Planifié",
+    webhook: "Webhook",
+    workflow: "Workflow",
+  };
+  return labels[type] ?? type;
+}
 
 const STATUS_FILTERS = [
   { value: "", label: "Tous" },
@@ -29,10 +40,21 @@ const ACTIVE = new Set(["running", "queued", "assigned", "preparing", "pending"]
 export default function RunsPage() {
   const router = useRouter();
   const [runs, setRuns] = useState<Run[]>([]);
+  const [jobs, setJobs] = useState<Job[]>([]);
   const [status, setStatus] = useState<StatusFilter>("");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(false);
+
+  useEffect(() => {
+    api.getJobs().then(setJobs).catch(console.error);
+  }, []);
+
+  const jobMap = useMemo(() => {
+    const m = new Map<string, Job>();
+    for (const j of jobs) m.set(j.id, j);
+    return m;
+  }, [jobs]);
 
   const load = useCallback((initial = false) => {
     if (initial) setLoading(true);
@@ -157,7 +179,7 @@ export default function RunsPage() {
             <DataTable>
               <thead>
                 <tr>
-                  <th>ID</th>
+                  <th>Job</th>
                   <th>Statut</th>
                   <th>Trigger</th>
                   <th>Durée</th>
@@ -165,34 +187,43 @@ export default function RunsPage() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((r) => (
-                  <tr
-                    key={r.id}
-                    onClick={() => router.push(`/runs/${r.id}`)}
-                    className="cursor-pointer"
-                  >
-                    <td>
-                      <span className="link-mono text-xs inline-flex items-center gap-1.5">
-                        {r.id.slice(0, 10)}…
-                        {r.debug && (
-                          <span title="Mode debug" className="text-accent">
-                            <Bug className="h-3 w-3" />
+                {filtered.map((r) => {
+                  const job = jobMap.get(r.job_id);
+                  return (
+                    <tr
+                      key={r.id}
+                      onClick={() => router.push(`/runs/${r.id}`)}
+                      className="cursor-pointer"
+                    >
+                      <td>
+                        <div className="max-w-[280px]">
+                          <span className="flex items-center gap-1.5 truncate font-medium text-foreground">
+                            {job?.name ?? "Job inconnu"}
+                            {r.debug && (
+                              <span title="Mode debug" className="text-accent shrink-0">
+                                <Bug className="h-3 w-3" />
+                              </span>
+                            )}
                           </span>
-                        )}
-                      </span>
-                    </td>
-                    <td>
-                      <StatusBadge status={r.status} />
-                    </td>
-                    <td className="text-muted-foreground capitalize text-xs">{r.trigger_type}</td>
-                    <td className="text-muted-foreground tabular-nums text-xs">
-                      {formatDuration(r.duration_seconds)}
-                    </td>
-                    <td className="text-muted-foreground text-xs" title={new Date(r.queued_at).toLocaleString("fr-FR")}>
-                      {relativeTime(r.queued_at)}
-                    </td>
-                  </tr>
-                ))}
+                          <span className="block truncate font-mono text-[11px] text-muted-foreground">
+                            {job?.slug ? `${job.slug} · ` : ""}
+                            {r.id.slice(0, 10)}…
+                          </span>
+                        </div>
+                      </td>
+                      <td>
+                        <StatusBadge status={r.status} />
+                      </td>
+                      <td className="text-muted-foreground text-xs">{formatTrigger(r.trigger_type)}</td>
+                      <td className="text-muted-foreground tabular-nums text-xs">
+                        {formatDuration(r.duration_seconds)}
+                      </td>
+                      <td className="text-muted-foreground text-xs" title={new Date(r.queued_at).toLocaleString("fr-FR")}>
+                        {relativeTime(r.queued_at)}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </DataTable>
           )}

@@ -315,6 +315,7 @@ async def stream_run_logs(
                 return
 
             last_ping = time.monotonic()
+            terminal_status: str | None = None
             while True:
                 message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
                 if message and message.get("type") == "message":
@@ -328,7 +329,7 @@ async def stream_run_logs(
                     elif channel.startswith(RUN_STATUS_CHANNEL_PREFIX):
                         yield f"event: status\ndata: {json.dumps(data)}\n\n"
                         if is_terminal(data.get("status", "")):
-                            yield f"event: done\ndata: {json.dumps(data)}\n\n"
+                            terminal_status = data.get("status")
                             break
                     last_ping = time.monotonic()
                 else:
@@ -344,9 +345,20 @@ async def stream_run_logs(
                     # Never let a transient DB hiccup kill the stream.
                     pass
                 if is_terminal(run.status):
-                    yield f"event: done\ndata: {json.dumps({'status': run.status})}\n\n"
+                    terminal_status = run.status
                     break
                 await asyncio.sleep(0.1)
+
+            # The final logs may still be committing when the status flips to a
+            # terminal state. Give writes a beat to land, then drain everything
+            # left in the DB so no trailing log is lost before we close.
+            await asyncio.sleep(0.3)
+            trailing = await get_logs_after(session, run_id, after_sequence)
+            for log in trailing:
+                after_sequence = log.sequence
+                yield f"id: {log.sequence}\nevent: log\ndata: {json.dumps({'sequence': log.sequence, 'stream': log.stream, 'message': log.message, 'timestamp': log.timestamp.isoformat()})}\n\n"
+
+            yield f"event: done\ndata: {json.dumps({'status': terminal_status or run.status})}\n\n"
         finally:
             await pubsub.unsubscribe()
             await pubsub.aclose()

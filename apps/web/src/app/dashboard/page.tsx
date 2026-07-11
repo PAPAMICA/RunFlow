@@ -19,22 +19,42 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { Sparkline } from "@/components/ui/sparkline";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { api, DashboardStats, Run } from "@/lib/api";
+import { api, DashboardStats, Job, Run } from "@/lib/api";
+import { formatDuration, relativeTime } from "@/lib/utils";
+
+function formatTrigger(type: string) {
+  const labels: Record<string, string> = {
+    manual: "Manuel",
+    api: "API",
+    schedule: "Planifié",
+    webhook: "Webhook",
+    workflow: "Workflow",
+  };
+  return labels[type] ?? type;
+}
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [runs, setRuns] = useState<Run[]>([]);
+  const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([api.getStats(), api.getRecentRuns()])
-      .then(([s, r]) => {
+    Promise.all([api.getStats(), api.getRecentRuns(), api.getJobs()])
+      .then(([s, r, j]) => {
         setStats(s);
         setRuns(r);
+        setJobs(j);
       })
       .catch(console.error)
       .finally(() => setLoading(false));
   }, []);
+
+  const jobMap = useMemo(() => {
+    const m = new Map<string, Job>();
+    for (const j of jobs) m.set(j.id, j);
+    return m;
+  }, [jobs]);
 
   const durationSeries = useMemo(
     () =>
@@ -76,7 +96,9 @@ export default function DashboardPage() {
         </div>
       ) : stats ? (
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
-          <StatCard label="Runs aujourd'hui" value={stats.runs_today} icon={Play} tone="primary" />
+          <Link href="/runs">
+            <StatCard label="Runs aujourd'hui" value={stats.runs_today} icon={Play} tone="primary" className="h-full cursor-pointer" />
+          </Link>
           <StatCard
             label="Taux de succès"
             value={`${stats.success_rate}%`}
@@ -85,16 +107,23 @@ export default function DashboardPage() {
             trend={stats.success_rate >= 90 ? "up" : stats.success_rate >= 60 ? "neutral" : "down"}
             trendLabel={`${stats.success_rate}%`}
           />
-          <StatCard label="En cours" value={stats.running_jobs} icon={Activity} tone="accent" />
-          <StatCard
-            label="Échecs"
-            value={stats.failed_jobs}
-            icon={AlertTriangle}
-            tone="destructive"
-            trend={stats.failed_jobs > 0 ? "down" : "neutral"}
-            trendLabel={stats.failed_jobs > 0 ? "À surveiller" : "Aucun"}
-          />
-          <StatCard label="Workers en ligne" value={stats.online_workers} icon={Server} tone="info" />
+          <Link href="/runs">
+            <StatCard label="En cours" value={stats.running_jobs} icon={Activity} tone="accent" className="h-full cursor-pointer" />
+          </Link>
+          <Link href="/runs">
+            <StatCard
+              label="Échecs"
+              value={stats.failed_jobs}
+              icon={AlertTriangle}
+              tone="destructive"
+              trend={stats.failed_jobs > 0 ? "down" : "neutral"}
+              trendLabel={stats.failed_jobs > 0 ? "À surveiller" : "Aucun"}
+              className="h-full cursor-pointer"
+            />
+          </Link>
+          <Link href="/workers">
+            <StatCard label="Workers en ligne" value={stats.online_workers} icon={Server} tone="info" className="h-full cursor-pointer" />
+          </Link>
         </div>
       ) : null}
 
@@ -123,7 +152,7 @@ export default function DashboardPage() {
               <DataTable>
                 <thead>
                   <tr>
-                    <th>ID</th>
+                    <th>Job</th>
                     <th>Statut</th>
                     <th>Déclencheur</th>
                     <th>Durée</th>
@@ -131,25 +160,37 @@ export default function DashboardPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {runs.map((r) => (
-                    <tr key={r.id}>
-                      <td>
-                        <Link href={`/runs/${r.id}`} className="link-mono text-xs">
-                          {r.id.slice(0, 10)}…
-                        </Link>
-                      </td>
-                      <td>
-                        <StatusBadge status={r.status} />
-                      </td>
-                      <td className="text-muted-foreground capitalize text-xs">{r.trigger_type}</td>
-                      <td className="text-muted-foreground tabular-nums text-xs">
-                        {r.duration_seconds?.toFixed(1) ?? "—"}s
-                      </td>
-                      <td className="text-muted-foreground text-xs">
-                        {new Date(r.queued_at).toLocaleString("fr-FR")}
-                      </td>
-                    </tr>
-                  ))}
+                  {runs.map((r) => {
+                    const job = jobMap.get(r.job_id);
+                    return (
+                      <tr key={r.id}>
+                        <td>
+                          <Link href={`/runs/${r.id}`} className="group block max-w-[240px]">
+                            <span className="block truncate font-medium text-foreground group-hover:text-primary transition-colors">
+                              {job?.name ?? "Job inconnu"}
+                            </span>
+                            <span className="block truncate font-mono text-[11px] text-muted-foreground">
+                              {job?.slug ? `${job.slug} · ` : ""}
+                              {r.id.slice(0, 10)}…
+                            </span>
+                          </Link>
+                        </td>
+                        <td>
+                          <StatusBadge status={r.status} />
+                        </td>
+                        <td className="text-muted-foreground text-xs">{formatTrigger(r.trigger_type)}</td>
+                        <td className="text-muted-foreground tabular-nums text-xs">
+                          {formatDuration(r.duration_seconds)}
+                        </td>
+                        <td
+                          className="text-muted-foreground text-xs"
+                          title={new Date(r.queued_at).toLocaleString("fr-FR")}
+                        >
+                          {relativeTime(r.queued_at)}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </DataTable>
             )}
