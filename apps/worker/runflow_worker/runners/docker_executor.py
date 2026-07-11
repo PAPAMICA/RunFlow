@@ -16,6 +16,7 @@ from docker.errors import DockerException
 
 from runflow_worker.config import get_settings
 from runflow_worker.debug_log import emit_post_run_debug, emit_runner_debug, emit_workspace_debug
+from runflow_worker.docker_paths import resolve_docker_bind_path
 from runflow_worker.runners.base import BaseRunner, RunContext, RunOutput
 from runflow_shared import RunnerType
 
@@ -104,6 +105,14 @@ class DockerExecutor(BaseRunner):
 
         return ["/bin/sh", "-c", script]
 
+    def _docker_volume_path(self, container_path: str) -> str:
+        settings = get_settings()
+        return resolve_docker_bind_path(
+            container_path,
+            worker_data_dir=settings.worker_data_dir,
+            host_data_dir=settings.host_data_dir,
+        )
+
     async def prepare(self, ctx: RunContext) -> None:
         import logging
 
@@ -160,11 +169,21 @@ class DockerExecutor(BaseRunner):
         entrypoint = job.get("resolved_entrypoint") or job.get("entrypoint", "main.py")
 
         volumes = {
-            str(workspace): {"bind": "/runflow", "mode": "rw"},
+            self._docker_volume_path(str(workspace)): {"bind": "/runflow", "mode": "rw"},
         }
         cache_dir = Path(settings.pip_cache_dir)
         cache_dir.mkdir(parents=True, exist_ok=True)
-        volumes[str(cache_dir)] = {"bind": "/cache", "mode": "rw"}
+        volumes[self._docker_volume_path(str(cache_dir))] = {"bind": "/cache", "mode": "rw"}
+
+        if ctx.debug and ctx.on_debug_log:
+            workspace_host = self._docker_volume_path(str(workspace))
+            cache_host = self._docker_volume_path(str(cache_dir))
+            entry_container = workspace / "job" / entrypoint
+            ctx.on_debug_log(f"Volume workspace (hôte Docker) : {workspace_host}")
+            ctx.on_debug_log(f"Volume pip-cache (hôte Docker) : {cache_host}")
+            ctx.on_debug_log(
+                f"Entrypoint worker : {'présent' if entry_container.is_file() else 'ABSENT'} ({entry_container})"
+            )
 
         if runner_type == RunnerType.BASH:
             command = ["bash", f"/runflow/job/{entrypoint}"]

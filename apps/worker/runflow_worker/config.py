@@ -23,6 +23,11 @@ class WorkerSettings(BaseSettings):
     ansible_runner_image: str = "runflow/runner-ansible:0.1.0"
     docker_enabled: bool = Field(default=True, validation_alias="DOCKER_ENABLED")
     worker_data_dir: str = "/worker-data"
+    host_data_dir: str | None = Field(
+        default=None,
+        validation_alias="HOST_DATA_DIR",
+        description="Host path bound to worker_data_dir (for Docker sibling container volumes)",
+    )
     runs_dir: str = "/worker-data/runs"
     pip_cache_dir: str = "/worker-data/pip-cache"
 

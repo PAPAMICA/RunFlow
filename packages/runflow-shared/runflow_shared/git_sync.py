@@ -327,7 +327,7 @@ def sync_git_to_dir(
     emit("Copie des sources vers le workspace…")
     if target_dir.exists():
         shutil.rmtree(target_dir)
-    shutil.copytree(src, target_dir)
+    shutil.copytree(src, target_dir, ignore=shutil.ignore_patterns(".git"))
     file_count = sum(1 for p in target_dir.rglob("*") if p.is_file())
     emit(f"Workspace prêt ({file_count} fichier(s))")
     return target_dir
