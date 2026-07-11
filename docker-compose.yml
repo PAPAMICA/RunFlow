@@ -33,7 +33,11 @@ services:
       dockerfile: apps/api/Dockerfile
     container_name: runflow_api
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-runflow}:${POSTGRES_PASSWORD:-runflow}@postgres:5432/${POSTGRES_DB:-runflow}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-runflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-runflow}
+      POSTGRES_DB: ${POSTGRES_DB:-runflow}
       VALKEY_URL: redis://valkey:6379/0
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
       RUNFLOW_MASTER_KEY: ${RUNFLOW_MASTER_KEY:-}

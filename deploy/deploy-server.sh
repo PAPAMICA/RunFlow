@@ -29,7 +29,7 @@ load_env() {
 }
 
 generate_secret() {
-  openssl rand -base64 32 | tr -d '/+=' | head -c 43
+  openssl rand -hex 24
 }
 
 ensure_env_file() {
@@ -231,6 +231,13 @@ main() {
   require_cmd docker
   require_cmd openssl
 
+  if [[ "${1:-}" == "--reset" ]]; then
+    log "Reset complet : arrêt des conteneurs et suppression de data/"
+    $COMPOSE down --remove-orphans || true
+    rm -rf "$ROOT/data"
+    shift
+  fi
+
   ensure_env_file
   ensure_generated_secrets
   validate_env
@@ -238,6 +245,11 @@ main() {
   WORKER_NAME="${WORKER_NAME:-server}"
   WORKER_DIR="$ROOT/data/worker-${WORKER_NAME}"
   WORKER_ENV="$WORKER_DIR/worker.env"
+
+  local fresh_postgres=0
+  if [[ ! -f "$ROOT/data/postgres/PG_VERSION" ]]; then
+    fresh_postgres=1
+  fi
 
   log "Préparation des répertoires de données..."
   mkdir -p "$ROOT/data/postgres" "$ROOT/data/runflow"
@@ -251,10 +263,17 @@ main() {
   "$ROOT/deploy/build-runners.sh"
 
   log "Build et démarrage de Postgres + Valkey..."
-  $COMPOSE up -d postgres valkey
+  if [[ $fresh_postgres -eq 1 ]]; then
+    log "Nouvelle base Postgres — initialisation..."
+    $COMPOSE up -d --force-recreate postgres valkey
+  else
+    $COMPOSE up -d postgres valkey
+  fi
   wait_for_service_healthy runflow_postgres
   wait_for_service_healthy runflow_valkey
-  sync_postgres_password
+  if [[ $fresh_postgres -eq 0 ]]; then
+    sync_postgres_password
+  fi
 
   log "Build et démarrage de l'API..."
   $COMPOSE up -d --build api

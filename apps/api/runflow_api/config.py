@@ -1,7 +1,10 @@
 """Application configuration."""
 
 from functools import lru_cache
+from typing import Self
+from urllib.parse import quote_plus
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -13,6 +16,11 @@ class Settings(BaseSettings):
     debug: bool = False
 
     database_url: str = "postgresql+asyncpg://runflow:runflow@localhost:5432/runflow"
+    postgres_host: str = ""
+    postgres_port: int = 5432
+    postgres_user: str = "runflow"
+    postgres_password: str = ""
+    postgres_db: str = "runflow"
     valkey_url: str = "redis://localhost:6379/0"
 
     jwt_secret: str = "change-me-in-production"
@@ -29,6 +37,17 @@ class Settings(BaseSettings):
 
     reconciliation_interval_seconds: int = 30
     worker_offline_threshold_seconds: int = 60
+
+    @model_validator(mode="after")
+    def assemble_database_url(self) -> Self:
+        if self.postgres_host and self.postgres_password:
+            password = quote_plus(self.postgres_password)
+            url = (
+                f"postgresql+asyncpg://{self.postgres_user}:{password}"
+                f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+            )
+            object.__setattr__(self, "database_url", url)
+        return self
 
     @property
     def cors_origin_list(self) -> list[str]:
