@@ -6,10 +6,10 @@
 #
 # Usage (depuis la racine du dépôt) :
 #   cp deploy/.env.server.example .env
-#   # éditer .env (domaines, secrets, mots de passe)
-#   mkdir -p data/postgres data/runflow
-#   docker compose -f deploy/docker-compose.server.yml up -d --build
-#   docker compose -f deploy/docker-compose.server.yml exec api runflow create-admin --email admin@runflow.local
+#   ./deploy/deploy-server.sh
+#
+# Ou manuellement :
+#   docker compose --project-directory . -f deploy/docker-compose.server.yml up -d --build
 
 services:
   postgres:
@@ -20,7 +20,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       POSTGRES_DB: ${POSTGRES_DB:-runflow}
     volumes:
-      - ../data/postgres:/var/lib/postgresql/data
+      - ./data/postgres:/var/lib/postgresql/data
     networks:
       - internal
     healthcheck:
@@ -44,7 +44,7 @@ services:
 
   api:
     build:
-      context: ..
+      context: .
       dockerfile: apps/api/Dockerfile
     image: runflow/api:0.1.0
     container_name: runflow_api
@@ -59,7 +59,7 @@ services:
       JOBS_DIR: /data/jobs
       RUNS_DIR: /data/runs
     volumes:
-      - ../data/runflow:/data
+      - ./data/runflow:/data
     networks:
       - internal
       - proxy
@@ -84,7 +84,7 @@ services:
 
   web:
     build:
-      context: ..
+      context: .
       dockerfile: apps/web/Dockerfile
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?NEXT_PUBLIC_API_URL is required}
@@ -107,7 +107,7 @@ services:
 
   worker:
     build:
-      context: ..
+      context: .
       dockerfile: apps/worker/Dockerfile
     image: runflow/worker:0.1.0
     container_name: runflow_worker_${WORKER_NAME:-server}
@@ -119,10 +119,10 @@ services:
       BASH_RUNNER_IMAGE: ${BASH_RUNNER_IMAGE:-runflow/runner-bash:0.1.0}
       ANSIBLE_RUNNER_IMAGE: ${ANSIBLE_RUNNER_IMAGE:-runflow/runner-ansible:0.1.0}
     env_file:
-      - path: ../data/worker-${WORKER_NAME:-server}/worker.env
+      - path: ./data/worker-${WORKER_NAME:-server}/worker.env
         required: false
     volumes:
-      - ../data/worker-${WORKER_NAME:-server}:/worker-data
+      - ./data/worker-${WORKER_NAME:-server}:/worker-data
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - internal

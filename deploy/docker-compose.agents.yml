@@ -1,25 +1,14 @@
 # RunFlow — agents d'exécution (workers distants)
 #
-# Déployer sur chaque machine capable d'exécuter Docker (accès au socket).
-# Les workers se connectent à l'API publique via HTTPS (long polling).
-#
-# Prérequis sur l'agent :
-#   - Docker Engine + accès à /var/run/docker.sock
-#   - Token d'enregistrement créé côté serveur :
-#       docker compose -f deploy/docker-compose.server.yml exec api \
-#         runflow worker-create-registration-token --name <NAME> --org-id <ORG_ID>
-#
 # Usage (depuis la racine du dépôt) :
 #   cp deploy/.env.agents.example .env
-#   # éditer .env (RUNFLOW_API_URL, WORKER_NAME)
 #   ./deploy/build-runners.sh
-#   docker compose -f deploy/docker-compose.agents.yml run --rm worker register
-#   docker compose -f deploy/docker-compose.agents.yml up -d
+#   docker compose --project-directory . -f deploy/docker-compose.agents.yml up -d worker
 
 services:
   worker:
     build:
-      context: ..
+      context: .
       dockerfile: apps/worker/Dockerfile
     image: runflow/worker:0.1.0
     container_name: runflow_worker_${WORKER_NAME:-agent1}
@@ -30,15 +19,16 @@ services:
       BASH_RUNNER_IMAGE: ${BASH_RUNNER_IMAGE:-runflow/runner-bash:0.1.0}
       ANSIBLE_RUNNER_IMAGE: ${ANSIBLE_RUNNER_IMAGE:-runflow/runner-ansible:0.1.0}
     env_file:
-      - ../data/worker-${WORKER_NAME:-agent1}/worker.env
+      - path: ./data/worker-${WORKER_NAME:-agent1}/worker.env
+        required: false
     volumes:
-      - ../data/worker-${WORKER_NAME:-agent1}:/worker-data
+      - ./data/worker-${WORKER_NAME:-agent1}:/worker-data
       - /var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped
 
   register:
     build:
-      context: ..
+      context: .
       dockerfile: apps/worker/Dockerfile
     image: runflow/worker:0.1.0
     profiles:
@@ -46,7 +36,7 @@ services:
     environment:
       RUNFLOW_API_URL: ${RUNFLOW_API_URL:?RUNFLOW_API_URL is required}
     volumes:
-      - ../data/worker-${WORKER_NAME:-agent1}:/worker-data
+      - ./data/worker-${WORKER_NAME:-agent1}:/worker-data
     entrypoint:
       - runflow-worker
       - register
