@@ -113,21 +113,24 @@ export function buildTriggerConfig(
         argument_mapping: parseJsonMapping(form.argumentMapping as string),
       };
     case "schedule":
-      return form.scheduleMode === "simple"
-        ? {
-            mode: "simple",
-            interval: form.scheduleInterval || "daily",
-            hour: Number(form.scheduleHour || 0),
-            minutes: Number(form.scheduleMinutes || 5),
-            timezone: form.timezone || "Europe/Paris",
-            default_arguments: parseJsonMapping(form.defaultArguments as string),
-          }
-        : {
-            mode: "advanced",
-            cron: form.cronExpr || "0 * * * *",
-            timezone: form.timezone || "Europe/Paris",
-            default_arguments: parseJsonMapping(form.defaultArguments as string),
-          };
+      // The frontend always builds a full cron expression (backend uses it
+      // directly in "advanced" mode). Structured inputs are kept under `ui` so
+      // the form can be reopened in the same structured mode when editing.
+      return {
+        mode: "advanced",
+        cron: form.cronExpr || "0 * * * *",
+        timezone: form.timezone || "Europe/Paris",
+        default_arguments: parseJsonMapping(form.defaultArguments as string),
+        ui: {
+          kind: form.scheduleKind || "cron",
+          every_minutes: Number(form.everyMinutes || 15),
+          at_minute: Number(form.atMinute || 0),
+          at_hour: Number(form.atHour || 9),
+          at_min: Number(form.atMin || 0),
+          weekdays: splitList(form.weekdays as string).map(Number),
+          month_day: Number(form.monthDay || 1),
+        },
+      };
     case "email":
       return {
         mailbox_id: form.mailboxId || "",

@@ -11,6 +11,15 @@ import {
   buildTriggerConfig,
   getHookUrl,
 } from "@/lib/trigger-types";
+import {
+  COMMON_TIMEZONES,
+  ScheduleKind,
+  WEEKDAYS,
+  browserTimezone,
+  buildCron,
+  describeSchedule,
+  nextRuns,
+} from "@/lib/schedule";
 import { Job, JobParameter, Mailbox, Trigger, TriggerCreate } from "@/lib/api";
 import { getUserFacingParameters } from "@/lib/job-args";
 import { Badge } from "@/components/ui/badge";
@@ -23,6 +32,15 @@ import { cn } from "@/lib/utils";
 
 const MAPPING_TYPES = new Set<TriggerTypeId>(["webhook", "git_push", "email", "run_event"]);
 const DEFAULT_ARG_TYPES = new Set<TriggerTypeId>(["schedule", "http_poll"]);
+
+const SCHEDULE_KINDS: { id: ScheduleKind; label: string }[] = [
+  { id: "minutes", label: "Toutes les N min" },
+  { id: "hourly", label: "Toutes les heures" },
+  { id: "daily", label: "Chaque jour" },
+  { id: "weekly", label: "Chaque semaine" },
+  { id: "monthly", label: "Chaque mois" },
+  { id: "cron", label: "Cron avancé" },
+];
 
 function readInit(t: Trigger) {
   const c = (t.config ?? {}) as Record<string, unknown>;
@@ -40,6 +58,23 @@ function readInit(t: Trigger) {
   const daObj = (c.default_arguments as Record<string, unknown>) ?? {};
   const da = Object.keys(daObj).length ? JSON.stringify(daObj, null, 2) : "";
 
+  // Schedule: prefer the structured `ui` hints; fall back to the legacy shape.
+  const ui = (c.ui as Record<string, unknown>) ?? {};
+  const legacyInterval = c.mode === "simple" ? (c.interval as string) : "";
+  const legacyKind: ScheduleKind =
+    legacyInterval === "every_minutes"
+      ? "minutes"
+      : legacyInterval === "hourly"
+        ? "hourly"
+        : legacyInterval === "daily"
+          ? "daily"
+          : legacyInterval === "weekly"
+            ? "weekly"
+            : legacyInterval === "monthly"
+              ? "monthly"
+              : "cron";
+  const scheduleKind = ((ui.kind as ScheduleKind) ?? legacyKind) as ScheduleKind;
+
   return {
     name: t.name,
     triggerType: t.trigger_type as TriggerTypeId,
@@ -51,11 +86,15 @@ function readInit(t: Trigger) {
     gitProvider: (c.provider as string) ?? "github",
     gitSecret: (c.secret as string) ?? "",
     gitBranches: ((c.branches as string[]) ?? []).join(", "),
-    scheduleMode: ((c.mode as string) === "advanced" ? "advanced" : "simple") as "simple" | "advanced",
+    scheduleKind,
+    everyMinutes: String(ui.every_minutes ?? c.minutes ?? 15),
+    atMinute: String(ui.at_minute ?? 0),
+    atHour: String(ui.at_hour ?? c.hour ?? 9),
+    atMin: String(ui.at_min ?? 0),
+    weekdays: (ui.weekdays as number[]) ?? [1],
+    monthDay: String(ui.month_day ?? c.day ?? 1),
     cronExpr: (c.cron as string) ?? "0 * * * *",
-    timezone: (c.timezone as string) ?? "Europe/Paris",
-    scheduleInterval: (c.interval as string) ?? "daily",
-    scheduleHour: String(c.hour ?? 2),
+    timezone: (c.timezone as string) ?? browserTimezone(),
     mailboxId: (c.mailbox_id as string) ?? "",
     emailFrom: findCond("FROM"),
     emailSubject: findCond("SUBJECT"),
@@ -118,12 +157,15 @@ export function TriggerForm({
   const [gitBranches, setGitBranches] = useState(init?.gitBranches ?? "main");
 
   // Schedule
-  const [scheduleMode, setScheduleMode] = useState<"simple" | "advanced">(init?.scheduleMode ?? "simple");
-  const [schedulePreset, setSchedulePreset] = useState(init ? "custom" : "hourly");
+  const [scheduleKind, setScheduleKind] = useState<ScheduleKind>(init?.scheduleKind ?? "daily");
+  const [everyMinutes, setEveryMinutes] = useState(init?.everyMinutes ?? "15");
+  const [atMinute, setAtMinute] = useState(init?.atMinute ?? "0");
+  const [atHour, setAtHour] = useState(init?.atHour ?? "9");
+  const [atMin, setAtMin] = useState(init?.atMin ?? "0");
+  const [weekdays, setWeekdays] = useState<number[]>(init?.weekdays ?? [1]);
+  const [monthDay, setMonthDay] = useState(init?.monthDay ?? "1");
   const [cronExpr, setCronExpr] = useState(init?.cronExpr ?? "0 * * * *");
-  const [timezone, setTimezone] = useState(init?.timezone ?? "Europe/Paris");
-  const [scheduleInterval, setScheduleInterval] = useState(init?.scheduleInterval ?? "daily");
-  const [scheduleHour, setScheduleHour] = useState(init?.scheduleHour ?? "2");
+  const [timezone, setTimezone] = useState(init?.timezone ?? browserTimezone());
 
   // Email
   const [mailboxId, setMailboxId] = useState(init?.mailboxId ?? mailboxes[0]?.id ?? "");
@@ -151,6 +193,37 @@ export function TriggerForm({
     () => (targetJob ? getUserFacingParameters(targetJob) : []),
     [targetJob]
   );
+
+  const scheduleFields = useMemo(
+    () => ({
+      everyMinutes: Number(everyMinutes),
+      atMinute: Number(atMinute),
+      atHour: Number(atHour),
+      atMin: Number(atMin),
+      weekdays,
+      monthDay: Number(monthDay),
+      cron: cronExpr,
+    }),
+    [everyMinutes, atMinute, atHour, atMin, weekdays, monthDay, cronExpr]
+  );
+  const effectiveCron = useMemo(
+    () => buildCron(scheduleKind, scheduleFields),
+    [scheduleKind, scheduleFields]
+  );
+  const scheduleSummary = useMemo(
+    () => describeSchedule(scheduleKind, scheduleFields),
+    [scheduleKind, scheduleFields]
+  );
+  const upcomingRuns = useMemo(
+    () => (triggerType === "schedule" ? nextRuns(effectiveCron, timezone, 4) : []),
+    [triggerType, effectiveCron, timezone]
+  );
+
+  function toggleWeekday(day: number) {
+    setWeekdays((prev) =>
+      prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]
+    );
+  }
 
   const sourceExpr = useMemo(() => {
     return (name_: string) => {
@@ -229,14 +302,14 @@ export function TriggerForm({
         gitProvider,
         gitSecret,
         gitBranches,
-        scheduleMode,
-        scheduleInterval,
-        scheduleHour,
-        scheduleMinutes: "5",
-        cronExpr:
-          schedulePreset === "custom"
-            ? cronExpr
-            : SCHEDULE_PRESETS.find((p) => p.id === schedulePreset)?.cron || cronExpr,
+        scheduleKind,
+        everyMinutes,
+        atMinute,
+        atHour,
+        atMin,
+        weekdays: weekdays.join(","),
+        monthDay,
+        cronExpr: effectiveCron,
         timezone,
         mailboxId,
         emailFrom,
@@ -397,39 +470,202 @@ export function TriggerForm({
           )}
 
           {triggerType === "schedule" && (
-            <>
-              <div className="flex gap-2">
-                <Button type="button" variant={scheduleMode === "simple" ? "default" : "outline"} size="sm" onClick={() => setScheduleMode("simple")}>
-                  Simple
-                </Button>
-                <Button type="button" variant={scheduleMode === "advanced" ? "default" : "outline"} size="sm" onClick={() => setScheduleMode("advanced")}>
-                  Cron avancé
-                </Button>
+            <div className="space-y-4">
+              {/* Frequency picker */}
+              <div className="space-y-2">
+                <Label>Fréquence</Label>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {SCHEDULE_KINDS.map((k) => {
+                    const active = scheduleKind === k.id;
+                    return (
+                      <button
+                        key={k.id}
+                        type="button"
+                        onClick={() => setScheduleKind(k.id)}
+                        className={cn(
+                          "rounded-lg border px-3 py-2 text-left text-sm transition-all",
+                          active
+                            ? "border-primary/50 bg-primary/10 text-foreground"
+                            : "border-border text-muted-foreground hover:bg-card-hover"
+                        )}
+                      >
+                        {k.label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-              {scheduleMode === "simple" ? (
-                <>
-                  <Select value={scheduleInterval} onChange={(e) => setScheduleInterval(e.target.value)}>
-                    <option value="every_minutes">Toutes les N minutes</option>
-                    <option value="hourly">Toutes les heures</option>
-                    <option value="daily">Quotidien</option>
-                    <option value="weekly">Hebdomadaire</option>
-                  </Select>
-                  {(scheduleInterval === "daily" || scheduleInterval === "weekly") && (
-                    <Input type="number" min={0} max={23} value={scheduleHour} onChange={(e) => setScheduleHour(e.target.value)} placeholder="Heure (0-23)" />
-                  )}
-                </>
-              ) : (
-                <>
-                  <Select value={schedulePreset} onChange={(e) => setSchedulePreset(e.target.value)}>
-                    {SCHEDULE_PRESETS.map((p) => (
-                      <option key={p.id} value={p.id}>{p.label}</option>
-                    ))}
-                  </Select>
-                  <Input value={cronExpr} onChange={(e) => setCronExpr(e.target.value)} className="font-mono text-xs" placeholder="0 * * * *" />
-                </>
+
+              {/* Kind-specific inputs */}
+              {scheduleKind === "minutes" && (
+                <div className="space-y-2">
+                  <Label>Intervalle</Label>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground">Toutes les</span>
+                    <Select
+                      value={everyMinutes}
+                      onChange={(e) => setEveryMinutes(e.target.value)}
+                      className="w-28"
+                    >
+                      {[1, 2, 5, 10, 15, 20, 30, 45].map((n) => (
+                        <option key={n} value={String(n)}>{n}</option>
+                      ))}
+                    </Select>
+                    <span className="text-sm text-muted-foreground">minutes</span>
+                  </div>
+                </div>
               )}
-              <Input value={timezone} onChange={(e) => setTimezone(e.target.value)} placeholder="Europe/Paris" />
-            </>
+
+              {scheduleKind === "hourly" && (
+                <div className="space-y-2">
+                  <Label>Minute de l&apos;heure</Label>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground">À la minute</span>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={59}
+                      value={atMinute}
+                      onChange={(e) => setAtMinute(e.target.value)}
+                      className="w-24"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {scheduleKind === "weekly" && (
+                <div className="space-y-2">
+                  <Label>Jours de la semaine</Label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {WEEKDAYS.map((w) => {
+                      const active = weekdays.includes(w.value);
+                      return (
+                        <button
+                          key={w.value}
+                          type="button"
+                          onClick={() => toggleWeekday(w.value)}
+                          className={cn(
+                            "rounded-lg border px-3 py-1.5 text-sm transition-all",
+                            active
+                              ? "border-primary/50 bg-primary/10 text-foreground"
+                              : "border-border text-muted-foreground hover:bg-card-hover"
+                          )}
+                        >
+                          {w.short}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {scheduleKind === "monthly" && (
+                <div className="space-y-2">
+                  <Label>Jour du mois</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={31}
+                    value={monthDay}
+                    onChange={(e) => setMonthDay(e.target.value)}
+                    className="w-24"
+                  />
+                </div>
+              )}
+
+              {(scheduleKind === "daily" ||
+                scheduleKind === "weekly" ||
+                scheduleKind === "monthly") && (
+                <div className="space-y-2">
+                  <Label>Heure d&apos;exécution</Label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      min={0}
+                      max={23}
+                      value={atHour}
+                      onChange={(e) => setAtHour(e.target.value)}
+                      className="w-20"
+                    />
+                    <span className="text-muted-foreground">:</span>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={59}
+                      value={atMin}
+                      onChange={(e) => setAtMin(e.target.value)}
+                      className="w-20"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {scheduleKind === "cron" && (
+                <div className="space-y-2">
+                  <Label>Expression cron</Label>
+                  <Input
+                    value={cronExpr}
+                    onChange={(e) => setCronExpr(e.target.value)}
+                    className="font-mono text-sm"
+                    placeholder="0 * * * *"
+                  />
+                  <div className="flex flex-wrap gap-1.5">
+                    {SCHEDULE_PRESETS.filter((p) => p.cron).map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => setCronExpr(p.cron)}
+                        className="rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:bg-card-hover"
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[11px] text-muted-foreground font-mono">
+                    minute · heure · jour du mois · mois · jour semaine
+                  </p>
+                </div>
+              )}
+
+              {/* Timezone */}
+              <div className="space-y-2">
+                <Label>Fuseau horaire</Label>
+                <Select value={timezone} onChange={(e) => setTimezone(e.target.value)}>
+                  {[...new Set([timezone, browserTimezone(), ...COMMON_TIMEZONES])].map((tz) => (
+                    <option key={tz} value={tz}>{tz}</option>
+                  ))}
+                </Select>
+              </div>
+
+              {/* Live preview */}
+              <div className="rounded-lg border border-success/25 bg-success/5 p-3 space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-medium">{scheduleSummary}</span>
+                  <code className="ml-auto rounded bg-black/40 px-2 py-0.5 text-[11px] font-mono text-muted-foreground">
+                    {effectiveCron}
+                  </code>
+                </div>
+                {upcomingRuns.length > 0 ? (
+                  <div>
+                    <p className="text-[11px] text-muted-foreground mb-1">Prochaines exécutions</p>
+                    <ul className="flex flex-wrap gap-1.5">
+                      {upcomingRuns.map((r, i) => (
+                        <li
+                          key={i}
+                          className="rounded-md bg-card px-2 py-1 text-[11px] font-mono text-foreground/90 border border-border"
+                        >
+                          {r}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-destructive">
+                    Expression cron invalide — vérifiez la syntaxe.
+                  </p>
+                )}
+              </div>
+            </div>
           )}
 
           {triggerType === "email" && (
