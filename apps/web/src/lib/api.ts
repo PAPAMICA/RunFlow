@@ -36,6 +36,18 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return res.json();
 }
 
+async function waitForRun(runId: string, timeoutMs = 120_000): Promise<Run> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const run = await request<Run>(`/api/v1/runs/${runId}`);
+    if (["success", "failed", "timeout", "cancelled", "skipped"].includes(run.status)) {
+      return run;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  throw new Error("Délai d'attente dépassé");
+}
+
 export const api = {
   login: (email: string, password: string) =>
     request<{ access_token: string }>("/api/v1/auth/login", {
@@ -64,11 +76,34 @@ export const api = {
     return request<Run[]>(`/api/v1/runs${q ? `?${q}` : ""}`);
   },
   getRun: (id: string) => request<Run>(`/api/v1/runs/${id}`),
-  runJob: (slug: string, arguments_: Record<string, unknown>, wait = false) =>
-    request<Run | { run_id: string; status: string }>(
-      `/api/v1/jobs/${slug}/run?wait=${wait}`,
-      { method: "POST", body: JSON.stringify({ arguments: arguments_ }) }
-    ),
+  waitForRun,
+  runJob: async (slug: string, arguments_: Record<string, unknown>, wait = false) => {
+    const res = await fetch(
+      `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/v1/jobs/${slug}/run?wait=${wait}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
+        },
+        body: JSON.stringify({ arguments: arguments_ }),
+      }
+    );
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const detail = data.detail;
+      const message = Array.isArray(detail)
+        ? detail.map((d: { msg?: string }) => d.msg || JSON.stringify(d)).join(", ")
+        : typeof detail === "string"
+          ? detail
+          : res.statusText;
+      throw new Error(message || res.statusText);
+    }
+    if (wait && res.status === 202 && data.run_id) {
+      return waitForRun(data.run_id);
+    }
+    return data as Run | { run_id: string; status: string };
+  },
 
   listJobFiles: (jobId: string) => request<JobFileNode[]>(`/api/v1/jobs/${jobId}/files`),
   getJobFile: (jobId: string, path: string) =>

@@ -7,7 +7,7 @@ import json
 import time
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,7 +19,7 @@ from runflow_api.core.parameter_validation import ParameterValidationError, vali
 from runflow_api.core.run_state import is_terminal
 from runflow_api.core.secret_redaction import SecretRedactor
 from runflow_api.deps import get_auth_context, require_permission
-from runflow_api.db import get_db
+from runflow_api.db import async_session_factory, get_db
 from runflow_api.models import Job, Run
 from runflow_api.schemas import RunCreateRequest, RunQueuedResponse, RunResponse
 from runflow_api.services.logs import get_logs_after
@@ -92,13 +92,14 @@ async def get_run(
     return _run_to_response(run)
 
 
-@router.post("/jobs/{job_slug}/run", response_model=RunQueuedResponse | RunResponse, status_code=202)
+@router.post("/jobs/{job_slug}/run", response_model=RunQueuedResponse | RunResponse)
 async def run_job(
     job_slug: str,
     payload: RunCreateRequest,
     request: Request,
+    response: Response,
     wait: bool = Query(default=False),
-    wait_timeout: int = Query(default=30, ge=1, le=300),
+    wait_timeout: int = Query(default=120, ge=1, le=600),
     auth: AuthContext = Depends(get_auth_context),
     session: AsyncSession = Depends(get_db),
 ):
@@ -148,20 +149,27 @@ async def run_job(
     )
     await enqueue_run(session, run)
     await session.commit()
+    run_id = run.id
 
     if not wait:
-        return RunQueuedResponse(run_id=run.id, status=run.status)
+        response.status_code = 202
+        return RunQueuedResponse(run_id=run_id, status=run.status)
 
     deadline = time.monotonic() + wait_timeout
     while time.monotonic() < deadline:
-        await session.refresh(run)
-        if is_terminal(run.status):
-            return _run_to_response(run)
+        async with async_session_factory() as poll_session:
+            result = await poll_session.execute(select(Run).where(Run.id == run_id))
+            polled = result.scalar_one()
+        if is_terminal(polled.status):
+            response.status_code = 200
+            return _run_to_response(polled)
         await asyncio.sleep(0.5)
-        result = await session.execute(select(Run).where(Run.id == run.id))
-        run = result.scalar_one()
 
-    return RunQueuedResponse(run_id=run.id, status=run.status)
+    async with async_session_factory() as poll_session:
+        result = await poll_session.execute(select(Run).where(Run.id == run_id))
+        polled = result.scalar_one()
+    response.status_code = 202
+    return RunQueuedResponse(run_id=polled.id, status=polled.status)
 
 
 @router.get("/runs/{run_id}/logs/stream")
