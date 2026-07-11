@@ -37,7 +37,7 @@ class MailboxResponse(BaseModel):
 
 @router.get("", response_model=list[MailboxResponse])
 async def list_mailboxes(
-    auth: AuthContext = Depends(require_permission("admin")),
+    auth: AuthContext = Depends(require_permission("job:read")),
     session: AsyncSession = Depends(get_db),
 ):
     result = await session.execute(
@@ -50,7 +50,7 @@ async def list_mailboxes(
 @router.post("", response_model=MailboxResponse, status_code=201)
 async def create_mailbox(
     payload: MailboxCreate,
-    auth: AuthContext = Depends(require_permission("admin")),
+    auth: AuthContext = Depends(require_permission("job:write")),
     session: AsyncSession = Depends(get_db),
 ):
     mailbox = Mailbox(

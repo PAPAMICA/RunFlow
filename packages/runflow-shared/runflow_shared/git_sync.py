@@ -172,6 +172,56 @@ def resolve_entrypoint(entrypoint: str, git_subpath: str = "") -> str:
     return ep
 
 
+def discover_entrypoint(
+    workspace: Path,
+    entrypoint: str,
+    git_subpath: str = "",
+    *,
+    configured: str | None = None,
+) -> str:
+    """Find an existing script path under workspace for the configured entrypoint."""
+    ep = entrypoint.strip().replace("\\", "/").lstrip("/")
+    sub = (git_subpath or "").strip().replace("\\", "/").strip("/")
+    configured = configured or ep
+
+    candidates: list[str] = []
+    for value in (
+        resolve_entrypoint(ep, sub),
+        ep,
+        Path(ep).name,
+    ):
+        if value and value not in candidates:
+            candidates.append(value)
+
+    for cand in candidates:
+        if (workspace / cand).is_file():
+            return cand
+
+    basename = Path(ep).name
+    if basename:
+        matches = sorted(
+            p.relative_to(workspace).as_posix()
+            for p in workspace.rglob(basename)
+            if p.is_file()
+        )
+        if len(matches) == 1:
+            return matches[0]
+        if matches:
+            for preferred in (ep, f"{sub}/{basename}" if sub else "", basename):
+                if preferred and preferred in matches:
+                    return preferred
+            for match in matches:
+                if match.endswith(ep) or ep.endswith(match):
+                    return match
+            return matches[0]
+
+    scripts = _list_workspace_scripts(workspace)
+    hint = f" Scripts trouvés : {', '.join(scripts)}." if scripts else " Aucun script .py/.sh dans le workspace."
+    raise FileNotFoundError(
+        f"Entrypoint introuvable : « {ep} » (configuré : « {configured} »).{hint}"
+    )
+
+
 def _list_workspace_scripts(root: Path, *, limit: int = 12) -> list[str]:
     if not root.is_dir():
         return []
@@ -193,6 +243,15 @@ def validate_job_entrypoint(workspace: Path, resolved: str, *, configured: str) 
     raise FileNotFoundError(
         f"Entrypoint introuvable : « {resolved} » (configuré : « {configured} »).{hint}"
     )
+
+
+def validate_or_discover_entrypoint(
+    workspace: Path,
+    entrypoint: str,
+    git_subpath: str = "",
+) -> str:
+    """Validate entrypoint exists, auto-discovering workspace-relative path if needed."""
+    return discover_entrypoint(workspace, entrypoint, git_subpath, configured=entrypoint)
 
 
 def get_git_worktree(

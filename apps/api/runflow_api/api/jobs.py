@@ -23,12 +23,21 @@ from runflow_api.schemas import (
     JobFileNode,
     JobFileRename,
     JobFileWrite,
+    JobNotificationConfig,
+    JobNotificationConfigResponse,
     JobResponse,
     JobStatsResponse,
     JobUpdate,
+    NotificationTestRequest,
+    NotificationTestResponse,
     ProjectCreate,
     ProjectResponse,
     RunResponse,
+)
+from runflow_api.services.notifications import (
+    notification_config_to_response,
+    parse_notification_config,
+    send_test_notification,
 )
 from runflow_api.api.runs import _run_to_response
 from runflow_api.services.job_files import JobFileStorage
@@ -36,9 +45,14 @@ from runflow_api.services.git_auth import resolve_git_config_auth
 from runflow_api.services.git_preview import build_git_preview
 from runflow_api.utils import new_ulid
 from runflow_shared import RunStatus
+from runflow_shared.git_sync import resolve_entrypoint
 
 router = APIRouter(tags=["jobs"])
 logger = logging.getLogger(__name__)
+
+
+def _normalize_git_entrypoint(entrypoint: str, git_config: dict | None) -> str:
+    return resolve_entrypoint(entrypoint, (git_config or {}).get("path", ""))
 
 
 async def _upsert_env_file(
@@ -62,6 +76,22 @@ async def _upsert_env_file(
         db_file.content = content
     else:
         session.add(JobFile(id=new_ulid(), job_id=job_id, path=".env", content=content))
+
+
+def _merge_notification_config(
+    existing: dict | None, incoming: JobNotificationConfig
+) -> dict:
+    current = parse_notification_config(existing)
+    data = incoming.model_dump()
+    new_pushover = data.get("pushover") or {}
+    user_key = (new_pushover.get("user_key") or "").strip()
+    if not user_key or "…" in user_key:
+        new_pushover["user_key"] = current.pushover.user_key
+    app_token = new_pushover.get("app_token")
+    if not app_token:
+        new_pushover["app_token"] = current.pushover.app_token
+    data["pushover"] = new_pushover
+    return data
 
 
 def _job_to_response(job: Job) -> JobResponse:
@@ -90,6 +120,10 @@ def _job_to_response(job: Job) -> JobResponse:
         enabled=job.enabled,
         git_config=git_cfg,
         has_env_file=has_env,
+        forced_arguments=job.forced_arguments or {},
+        notification_config=JobNotificationConfigResponse(
+            **notification_config_to_response(job.notification_config)
+        ),
         parameters=[
             {
                 "id": p.id,
@@ -203,6 +237,11 @@ async def create_job(
     if payload.source_type == "git" and not payload.git_config:
         raise HTTPException(status_code=400, detail="git_config is required for git source jobs")
 
+    git_config_dict = payload.git_config.model_dump() if payload.git_config else None
+    entrypoint = payload.entrypoint
+    if payload.source_type == "git" and git_config_dict:
+        entrypoint = _normalize_git_entrypoint(entrypoint, git_config_dict)
+
     job = Job(
         id=new_ulid(),
         organization_id=auth.organization_id,
@@ -212,7 +251,7 @@ async def create_job(
         description=payload.description,
         runner_type=payload.runner_type,
         source_type=payload.source_type,
-        entrypoint=payload.entrypoint,
+        entrypoint=entrypoint,
         timeout_seconds=payload.timeout_seconds,
         concurrency_limit=payload.concurrency_limit,
         prevent_concurrent_runs=payload.prevent_concurrent_runs,
@@ -220,7 +259,8 @@ async def create_job(
         network_mode=payload.network_mode,
         memory_limit_mb=payload.memory_limit_mb,
         cpu_limit=payload.cpu_limit,
-        git_config=payload.git_config.model_dump() if payload.git_config else None,
+        git_config=git_config_dict,
+        forced_arguments={},
     )
     session.add(job)
     await session.flush()
@@ -349,11 +389,18 @@ async def update_job(
     data = payload.model_dump(exclude_unset=True)
     new_parameters = data.pop("parameters", None)
     env_content = data.pop("env_file_content", None)
+    notification_config = data.pop("notification_config", None)
     if "git_config" in data and data["git_config"] is not None:
         data["git_config"] = GitConfig(**data["git_config"]).model_dump()
 
     for field, value in data.items():
         setattr(job, field, value)
+
+    if notification_config is not None:
+        job.notification_config = _merge_notification_config(
+            job.notification_config,
+            JobNotificationConfig.model_validate(notification_config),
+        )
 
     if new_parameters is not None:
         for param in list(job.parameters):
@@ -378,6 +425,9 @@ async def update_job(
 
     if env_content is not None:
         await _upsert_env_file(session, job.id, env_content, storage)
+
+    if job.source_type == "git" and job.git_config and job.entrypoint:
+        job.entrypoint = _normalize_git_entrypoint(job.entrypoint, job.git_config)
 
     session.add(job)
     await session.flush()
@@ -577,3 +627,21 @@ async def rename_job_file(
     if db_file:
         db_file.path = payload.new_path
     return JobFileNode(path=payload.new_path, is_directory=False)
+
+
+@router.post("/jobs/{job_id}/notifications/test", response_model=NotificationTestResponse)
+async def test_job_notification(
+    job_id: str,
+    payload: NotificationTestRequest,
+    auth: AuthContext = Depends(require_permission("job:write")),
+    session: AsyncSession = Depends(get_db),
+):
+    result = await session.execute(
+        select(Job).where(Job.id == job_id, Job.organization_id == auth.organization_id)
+    )
+    job = result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    success, message = await send_test_notification(job, payload.channel)
+    return NotificationTestResponse(channel=payload.channel, success=success, message=message)

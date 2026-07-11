@@ -50,3 +50,34 @@ def test_unknown_parameter():
     with pytest.raises(ParameterValidationError) as exc:
         validate_job_arguments(params, {"domain": "x", "extra": "y"})
     assert "extra" in exc.value.errors
+
+
+def test_forced_arguments_only_no_declared_params():
+    """Job with only forced args and no parameters should validate."""
+    result = validate_job_arguments(
+        [],
+        {},
+        forced_arguments={"cal_only": True},
+    )
+    assert result == {"cal_only": True}
+
+
+def test_forced_arguments_override_user_input():
+    params = [_param("env", ParameterType.STRING, required=True)]
+    result = validate_job_arguments(
+        params,
+        {"env": "dev"},
+        forced_arguments={"env": "production"},
+    )
+    assert result["env"] == "production"
+
+
+def test_forced_arguments_hide_required_param():
+    """Forced value satisfies a required parameter without user input."""
+    params = [_param("cal_only", ParameterType.BOOLEAN, required=True)]
+    result = validate_job_arguments(
+        params,
+        {},
+        forced_arguments={"cal_only": True},
+    )
+    assert result["cal_only"] is True

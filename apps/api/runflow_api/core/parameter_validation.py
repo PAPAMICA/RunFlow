@@ -84,9 +84,13 @@ def _coerce_value(param: JobParameter, raw: Any) -> Any:
 
 
 def validate_job_arguments(
-    parameters: list[JobParameter], arguments: dict[str, Any] | None
+    parameters: list[JobParameter],
+    arguments: dict[str, Any] | None,
+    *,
+    forced_arguments: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    arguments = arguments or {}
+    forced = forced_arguments or {}
+    arguments = {**(arguments or {}), **forced}
     errors: dict[str, str] = {}
     validated: dict[str, Any] = {}
 
@@ -99,8 +103,12 @@ def validate_job_arguments(
         except (ValueError, ValidationError, json.JSONDecodeError) as exc:
             errors[param.name] = str(exc)
 
-    extra = set(arguments.keys()) - {p.name for p in parameters}
+    param_names = {p.name for p in parameters}
+    extra = set(arguments.keys()) - param_names
     for key in extra:
+        if key in forced:
+            validated[key] = forced[key]
+            continue
         errors[key] = "unknown parameter"
 
     if errors:

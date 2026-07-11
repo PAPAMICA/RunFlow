@@ -19,6 +19,7 @@ from runflow_api.api import (
 from runflow_api.config import get_settings
 from runflow_api.logging_config import setup_logging
 from runflow_api.services.email_poller import email_poller_loop
+from runflow_api.services.http_poller import http_poller_loop
 from runflow_api.services.scheduler import scheduler_loop
 from runflow_api.services.worker_health import worker_health_loop
 from runflow_api.services.valkey import close_valkey
@@ -51,6 +52,7 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(_reconciliation_loop()),
         asyncio.create_task(scheduler_loop()),
         asyncio.create_task(email_poller_loop()),
+        asyncio.create_task(http_poller_loop()),
         asyncio.create_task(worker_health_loop()),
     ]
     yield

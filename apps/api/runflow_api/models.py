@@ -131,6 +131,8 @@ class Job(Base, TimestampMixin):
     worker_id: Mapped[str | None] = mapped_column(String(26))
     secret_refs: Mapped[list[str] | None] = mapped_column(JSONB)
     credential_refs: Mapped[list[str] | None] = mapped_column(JSONB)
+    notification_config: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    forced_arguments: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
 
     project: Mapped[Project] = relationship(back_populates="jobs")
     parameters: Mapped[list[JobParameter]] = relationship(

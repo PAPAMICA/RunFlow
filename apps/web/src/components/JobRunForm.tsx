@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { GitBranch, Loader2, Play, Terminal } from "lucide-react";
+import { GitBranch, Loader2, Lock, Play, Terminal } from "lucide-react";
 import { Job, JobParameter } from "@/lib/api";
+import { canLaunchDirectly, getUserFacingParameters } from "@/lib/job-args";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -25,7 +26,10 @@ export function JobRunForm({
   running: boolean;
   result: string;
 }) {
-  const hasParams = job.parameters.length > 0;
+  const userParams = getUserFacingParameters(job);
+  const forced = job.forced_arguments ?? {};
+  const forcedEntries = Object.entries(forced);
+  const directLaunch = canLaunchDirectly(job);
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_320px] max-w-5xl">
@@ -34,13 +38,29 @@ export function JobRunForm({
           <CardTitle className="text-lg">Lancer une exécution</CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
-          {!hasParams ? (
+          {forcedEntries.length > 0 && (
+            <div className="rounded-lg border border-warning/30 bg-warning/5 p-4 space-y-2">
+              <p className="text-xs font-medium flex items-center gap-1.5 text-warning">
+                <Lock className="h-3.5 w-3.5" />
+                Arguments forcés (toujours appliqués)
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {forcedEntries.map(([key, value]) => (
+                  <Badge key={key} variant="muted" className="font-mono text-[10px]">
+                    {key}={String(value)}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {directLaunch ? (
             <p className="text-sm text-muted-foreground">
-              Ce job n&apos;a pas de paramètres — vous pouvez le lancer directement.
+              Tous les arguments sont forcés — lancez directement sans saisie.
             </p>
           ) : (
             <div className="space-y-4">
-              {job.parameters.map((p) => (
+              {userParams.map((p) => (
                 <ParameterField
                   key={p.id}
                   param={p}
@@ -67,7 +87,7 @@ export function JobRunForm({
               ) : (
                 <>
                   <Play className="h-4 w-4" />
-                  Lancer
+                  {directLaunch ? "Lancer maintenant" : "Lancer"}
                 </>
               )}
             </Button>

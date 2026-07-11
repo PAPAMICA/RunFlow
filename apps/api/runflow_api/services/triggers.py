@@ -5,6 +5,7 @@ from __future__ import annotations
 import secrets
 from typing import Any
 
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from runflow_api.core.template_engine import render_argument_mapping
@@ -12,7 +13,7 @@ from runflow_api.models import Job, Run, Trigger
 from runflow_api.services.queue import enqueue_run
 from runflow_api.services.workflow_engine import start_workflow_run
 from runflow_api.utils import new_ulid
-from runflow_shared import TriggerType
+from runflow_shared import RunStatus
 
 
 def generate_hook_token() -> str:
@@ -44,14 +45,30 @@ async def fire_trigger(
             trigger_id=trigger.id,
         )
 
-    # Target is a job
-    from sqlalchemy import select
-    from runflow_api.models import Job
-
     job_result = await session.execute(select(Job).where(Job.id == trigger.target_id))
     job = job_result.scalar_one_or_none()
     if not job or not job.enabled:
         raise ValueError("Target job not found or disabled")
+
+    if job.forced_arguments:
+        arguments = {**arguments, **job.forced_arguments}
+
+    if job.prevent_concurrent_runs:
+        active = await session.scalar(
+            select(func.count(Run.id)).where(
+                Run.job_id == job.id,
+                Run.status.in_(
+                    [
+                        RunStatus.QUEUED,
+                        RunStatus.ASSIGNED,
+                        RunStatus.PREPARING,
+                        RunStatus.RUNNING,
+                    ]
+                ),
+            )
+        )
+        if active and active > 0:
+            raise ValueError("Target job already has an active run")
 
     run = Run(
         id=new_ulid(),
@@ -62,3 +79,4 @@ async def fire_trigger(
         arguments=arguments,
     )
     return await enqueue_run(session, run)
+

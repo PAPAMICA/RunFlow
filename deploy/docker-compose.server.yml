@@ -68,6 +68,13 @@ services:
       RUNFLOW_MASTER_KEY: ${RUNFLOW_MASTER_KEY:?RUNFLOW_MASTER_KEY is required}
       CORS_ORIGINS: ${CORS_ORIGINS:-}
       RUNFLOW_WEB_HOST: ${RUNFLOW_WEB_HOST:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
+      PUSHOVER_APP_TOKEN: ${PUSHOVER_APP_TOKEN:-}
       DATA_DIR: /data
       JOBS_DIR: /data/jobs
       RUNS_DIR: /data/runs

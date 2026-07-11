@@ -7,6 +7,7 @@ import { Boxes, GitBranch, Plus } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { DataTable, DataTableSkeleton } from "@/components/DataTable";
 import { EmptyState } from "@/components/EmptyState";
+import { FavoriteButton } from "@/components/FavoriteButton";
 import { JobDeployForm } from "@/components/JobDeployForm";
 import { PageHeader } from "@/components/PageHeader";
 import { SearchInput } from "@/components/SearchInput";
@@ -102,6 +103,7 @@ export default function JobsPage() {
             <DataTable>
               <thead>
                 <tr>
+                  <th className="w-10" />
                   <th>Nom</th>
                   <th>Source</th>
                   <th>Runner</th>
@@ -112,6 +114,9 @@ export default function JobsPage() {
               <tbody>
                 {filtered.map((j) => (
                   <tr key={j.id}>
+                    <td>
+                      <FavoriteButton jobId={j.id} />
+                    </td>
                     <td>
                       <Link href={`/jobs/${j.id}`} className="link-primary">
                         {j.name}

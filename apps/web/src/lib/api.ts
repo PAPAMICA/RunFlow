@@ -70,6 +70,11 @@ export const api = {
     }),
   updateJob: (id: string, data: JobUpdate) =>
     request<Job>(`/api/v1/jobs/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  testJobNotification: (id: string, channel: "email" | "pushover") =>
+    request<NotificationTestResult>(`/api/v1/jobs/${id}/notifications/test`, {
+      method: "POST",
+      body: JSON.stringify({ channel }),
+    }),
   getProjects: () => request<Project[]>("/api/v1/projects"),
   getRuns: (params?: { status?: string; job_id?: string }) => {
     const q = new URLSearchParams(params as Record<string, string>).toString();
@@ -124,6 +129,13 @@ export const api = {
   getTriggers: () => request<Trigger[]>("/api/v1/triggers"),
   createTrigger: (data: TriggerCreate) =>
     request<Trigger>("/api/v1/triggers", { method: "POST", body: JSON.stringify(data) }),
+  updateTrigger: (id: string, data: TriggerUpdate) =>
+    request<Trigger>(`/api/v1/triggers/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  deleteTrigger: (id: string) =>
+    request<void>(`/api/v1/triggers/${id}`, { method: "DELETE" }),
+  getMailboxes: () => request<Mailbox[]>("/api/v1/mailboxes"),
+  createMailbox: (data: MailboxCreate) =>
+    request<Mailbox>("/api/v1/mailboxes", { method: "POST", body: JSON.stringify(data) }),
   getSecrets: () => request<Secret[]>("/api/v1/secrets"),
   createSecret: (data: SecretCreate) =>
     request<Secret>("/api/v1/secrets", { method: "POST", body: JSON.stringify(data) }),
@@ -224,6 +236,32 @@ export interface GitPreviewResponse {
   entrypoint?: string | null;
 }
 
+export interface JobNotificationEmailConfig {
+  enabled: boolean;
+  recipients: string[];
+}
+
+export interface JobNotificationPushoverConfig {
+  enabled: boolean;
+  user_key: string;
+  app_token?: string | null;
+}
+
+export interface JobNotificationConfig {
+  enabled: boolean;
+  on_success: boolean;
+  on_failure: boolean;
+  email: JobNotificationEmailConfig;
+  pushover: JobNotificationPushoverConfig;
+  pushover_user_key_set?: boolean;
+}
+
+export interface NotificationTestResult {
+  channel: string;
+  success: boolean;
+  message: string;
+}
+
 export interface Job {
   id: string;
   name: string;
@@ -236,6 +274,8 @@ export interface Job {
   git_config?: GitConfig | null;
   has_env_file?: boolean;
   timeout_seconds?: number;
+  notification_config?: JobNotificationConfig | null;
+  forced_arguments?: Record<string, unknown>;
   parameters: JobParameter[];
   project_id: string;
 }
@@ -272,6 +312,8 @@ export interface JobUpdate {
   env_file_content?: string;
   parameters?: JobParameterInput[];
   enabled?: boolean;
+  notification_config?: JobNotificationConfig;
+  forced_arguments?: Record<string, unknown>;
 }
 
 export interface JobFileNode {
@@ -288,8 +330,45 @@ export interface JobStats {
   last_failure: Run | null;
 }
 
-export interface Trigger { id: string; name: string; trigger_type: string; target_type: string; target_id?: string; hook_token?: string; enabled: boolean }
-export interface TriggerCreate { name: string; trigger_type: string; target_id: string; project_id?: string; config?: Record<string, unknown> }
+export interface Trigger {
+  id: string;
+  name: string;
+  trigger_type: string;
+  target_type: string;
+  target_id?: string;
+  hook_token?: string;
+  enabled: boolean;
+  config?: Record<string, unknown>;
+  project_id?: string | null;
+}
+export interface TriggerCreate {
+  name: string;
+  trigger_type: string;
+  target_id: string;
+  project_id?: string;
+  config?: Record<string, unknown>;
+}
+export interface TriggerUpdate {
+  name?: string;
+  enabled?: boolean;
+  config?: Record<string, unknown>;
+  target_id?: string;
+}
+export interface Mailbox {
+  id: string;
+  name: string;
+  provider: string;
+  enabled: boolean;
+  polling_interval: number;
+}
+export interface MailboxCreate {
+  name: string;
+  provider?: string;
+  config?: Record<string, unknown>;
+  credential_id?: string;
+  polling_interval?: number;
+  mark_as_read?: boolean;
+}
 export interface Secret { id: string; name: string; scope: string }
 export interface SecretCreate { name: string; value: string; scope?: string }
 export interface Credential { id: string; name: string; credential_type: string }

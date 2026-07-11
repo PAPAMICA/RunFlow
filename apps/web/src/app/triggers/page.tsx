@@ -1,104 +1,156 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Plus, Shield, Zap } from "lucide-react";
+import {
+  Clock,
+  GitBranch,
+  Link2,
+  Mail,
+  Plus,
+  RefreshCw,
+  Trash2,
+  Webhook,
+  Zap,
+} from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { EmptyState } from "@/components/EmptyState";
+import { HookUrlCopy, TriggerForm } from "@/components/TriggerForm";
 import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
+import { TRIGGER_TYPES } from "@/lib/trigger-types";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select } from "@/components/ui/select";
-import { api, Job, Project, Trigger } from "@/lib/api";
+import { api, Job, Mailbox, Trigger } from "@/lib/api";
+import { cn } from "@/lib/utils";
+
+const TYPE_ICONS: Record<string, typeof Zap> = {
+  webhook: Webhook,
+  git_push: GitBranch,
+  schedule: Clock,
+  email: Mail,
+  http_poll: RefreshCw,
+  run_event: Link2,
+};
 
 export default function TriggersPage() {
   const [triggers, setTriggers] = useState<Trigger[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [name, setName] = useState("");
-  const [triggerType, setTriggerType] = useState("webhook");
-  const [targetId, setTargetId] = useState("");
-  const [cronExpr, setCronExpr] = useState("0 * * * *");
-  const [error, setError] = useState("");
+  const [mailboxes, setMailboxes] = useState<Mailbox[]>([]);
   const [showCreate, setShowCreate] = useState(false);
+  const [showMailbox, setShowMailbox] = useState(false);
+  const [mailboxName, setMailboxName] = useState("");
+  const [mailboxHost, setMailboxHost] = useState("");
+  const [mailboxUser, setMailboxUser] = useState("");
+  const [mailboxPassword, setMailboxPassword] = useState("");
 
   async function refresh() {
-    const [t, j, p] = await Promise.all([api.getTriggers(), api.getJobs(), api.getProjects()]);
+    const [t, j, m] = await Promise.all([
+      api.getTriggers(),
+      api.getJobs(),
+      api.getMailboxes().catch(() => [] as Mailbox[]),
+    ]);
     setTriggers(t);
     setJobs(j);
-    setProjects(p);
-    if (!targetId && j[0]) setTargetId(j[0].id);
+    setMailboxes(m);
   }
 
-  useEffect(() => { refresh().catch(console.error); }, []);
+  useEffect(() => {
+    refresh().catch(console.error);
+  }, []);
 
-  async function handleCreate(e: React.FormEvent) {
-    e.preventDefault();
-    setError("");
-    try {
-      const config = triggerType === "schedule" ? { cron: cronExpr } : {};
-      await api.createTrigger({
-        name,
-        trigger_type: triggerType,
-        target_id: targetId,
-        project_id: projects[0]?.id,
-        config,
-      });
-      setName("");
-      setShowCreate(false);
-      await refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Erreur");
-    }
+  async function toggleEnabled(trigger: Trigger) {
+    await api.updateTrigger(trigger.id, { enabled: !trigger.enabled });
+    await refresh();
   }
+
+  async function deleteTrigger(id: string) {
+    if (!confirm("Supprimer ce trigger ?")) return;
+    await api.deleteTrigger(id);
+    await refresh();
+  }
+
+  async function createMailbox() {
+    await api.createMailbox({
+      name: mailboxName,
+      provider: "imap",
+      config: { host: mailboxHost, port: 993, username: mailboxUser, password: mailboxPassword },
+      polling_interval: 60,
+    });
+    setMailboxName("");
+    setMailboxHost("");
+    setMailboxUser("");
+    setMailboxPassword("");
+    setShowMailbox(false);
+    await refresh();
+  }
+
+  const jobName = (id?: string) => jobs.find((j) => j.id === id)?.name ?? id?.slice(0, 8) ?? "—";
 
   return (
     <AppShell>
       <PageHeader
         title="Triggers"
-        description="Webhooks, planifications cron et déclencheurs e-mail"
+        description="Déclenchez vos jobs via webhook, Git, cron, email, polling HTTP ou enchaînement de runs"
         action={
-          <Button onClick={() => setShowCreate(!showCreate)}>
-            <Plus className="h-4 w-4" />
-            Nouveau trigger
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setShowMailbox(!showMailbox)}>
+              <Mail className="h-4 w-4" />
+              Mailbox IMAP
+            </Button>
+            <Button onClick={() => setShowCreate(!showCreate)}>
+              <Plus className="h-4 w-4" />
+              Nouveau trigger
+            </Button>
+          </div>
         }
       />
+
+      <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6 mb-8">
+        {TRIGGER_TYPES.map((t) => {
+          const Icon = t.icon;
+          const count = triggers.filter((tr) => tr.trigger_type === t.id).length;
+          return (
+            <Card key={t.id} className="bg-card/50">
+              <CardContent className="pt-4 pb-4">
+                <div className="flex items-center gap-2">
+                  <Icon className={cn("h-4 w-4", t.color)} />
+                  <span className="text-xs font-medium truncate">{t.label}</span>
+                </div>
+                <p className="text-2xl font-bold mt-2 tabular-nums">{count}</p>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+
+      {showMailbox && (
+        <Card className="mb-6 border-accent/20">
+          <CardContent className="pt-5 grid gap-3 max-w-lg">
+            <p className="text-sm font-medium">Nouvelle boîte IMAP</p>
+            <Input value={mailboxName} onChange={(e) => setMailboxName(e.target.value)} placeholder="Nom (ex. support)" />
+            <Input value={mailboxHost} onChange={(e) => setMailboxHost(e.target.value)} placeholder="imap.example.com" />
+            <Input value={mailboxUser} onChange={(e) => setMailboxUser(e.target.value)} placeholder="utilisateur" />
+            <Input type="password" value={mailboxPassword} onChange={(e) => setMailboxPassword(e.target.value)} placeholder="mot de passe" />
+            <Button onClick={createMailbox} disabled={!mailboxName || !mailboxHost}>Créer la mailbox</Button>
+          </CardContent>
+        </Card>
+      )}
 
       {showCreate && (
         <Card className="mb-6 border-primary/20">
           <CardContent className="pt-5">
-            <form onSubmit={handleCreate} className="grid gap-4 max-w-lg">
-              <div className="space-y-2">
-                <Label>Nom</Label>
-                <Input value={name} onChange={(e) => setName(e.target.value)} required />
-              </div>
-              <div className="space-y-2">
-                <Label>Type</Label>
-                <Select value={triggerType} onChange={(e) => setTriggerType(e.target.value)}>
-                  <option value="webhook">Webhook</option>
-                  <option value="schedule">Planification (cron)</option>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Job cible</Label>
-                <Select value={targetId} onChange={(e) => setTargetId(e.target.value)}>
-                  {jobs.map((j) => (
-                    <option key={j.id} value={j.id}>{j.name}</option>
-                  ))}
-                </Select>
-              </div>
-              {triggerType === "schedule" && (
-                <div className="space-y-2">
-                  <Label>Expression cron</Label>
-                  <Input value={cronExpr} onChange={(e) => setCronExpr(e.target.value)} className="font-mono" />
-                </div>
-              )}
-              {error && <p className="text-sm text-destructive">{error}</p>}
-              <Button type="submit">Créer</Button>
-            </form>
+            <TriggerForm
+              jobs={jobs}
+              mailboxes={mailboxes}
+              onSubmit={async (data) => {
+                await api.createTrigger(data);
+                setShowCreate(false);
+                await refresh();
+              }}
+              onCancel={() => setShowCreate(false)}
+            />
           </CardContent>
         </Card>
       )}
@@ -107,30 +159,62 @@ export default function TriggersPage() {
         <EmptyState
           icon={Zap}
           title="Aucun trigger"
-          description="Automatisez l'exécution de vos jobs via webhooks ou cron."
+          description="Automatisez vos jobs : webhook, push Git, cron, email, surveillance HTTP ou enchaînement après un run."
           onAction={() => setShowCreate(true)}
           actionLabel="Créer un trigger"
         />
       ) : (
         <div className="space-y-3">
-          {triggers.map((t) => (
-            <Card key={t.id} hover>
-              <CardContent className="pt-5 flex justify-between items-start gap-4">
-                <div className="min-w-0">
-                  <p className="font-medium">{t.name}</p>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    {t.trigger_type} → {t.target_type}
-                  </p>
-                  {t.hook_token && (
-                    <code className="text-xs text-primary/80 mt-2 block truncate">
-                      /api/v1/hooks/{t.hook_token}
-                    </code>
-                  )}
-                </div>
-                <StatusBadge status={t.enabled ? "enabled" : "disabled"} />
-              </CardContent>
-            </Card>
-          ))}
+          {triggers.map((t) => {
+            const Icon = TYPE_ICONS[t.trigger_type] ?? Zap;
+            const meta = TRIGGER_TYPES.find((x) => x.id === t.trigger_type);
+            return (
+              <Card key={t.id} hover>
+                <CardContent className="pt-5 flex flex-wrap justify-between gap-4">
+                  <div className="flex gap-3 min-w-0 flex-1">
+                    <div className="rounded-lg bg-primary/10 p-2.5 shrink-0 h-fit">
+                      <Icon className="h-4 w-4 text-primary" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-medium">{t.name}</p>
+                        <Badge variant="muted" className="text-[10px]">{meta?.label ?? t.trigger_type}</Badge>
+                      </div>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        → {jobName(t.target_id)}
+                      </p>
+                      {t.hook_token && <HookUrlCopy hookToken={t.hook_token} />}
+                      {t.trigger_type === "schedule" && typeof t.config?.cron === "string" ? (
+                        <code className="text-xs font-mono text-muted-foreground mt-1 block">
+                          cron: {t.config.cron}
+                        </code>
+                      ) : null}
+                      {t.trigger_type === "http_poll" && typeof t.config?.url === "string" ? (
+                        <code className="text-xs font-mono text-muted-foreground mt-1 block truncate">
+                          poll: {t.config.url}
+                        </code>
+                      ) : null}
+                      {t.trigger_type === "run_event" && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Après {jobName(String(t.config?.source_job_id ?? ""))} —{" "}
+                          {Array.isArray(t.config?.on_status) ? (t.config.on_status as string[]).join(", ") : "success, failed"}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <StatusBadge status={t.enabled ? "enabled" : "disabled"} />
+                    <Button variant="outline" size="sm" onClick={() => toggleEnabled(t)}>
+                      {t.enabled ? "Désactiver" : "Activer"}
+                    </Button>
+                    <Button variant="outline" size="icon" onClick={() => deleteTrigger(t.id)}>
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       )}
     </AppShell>

@@ -38,6 +38,23 @@ class Settings(BaseSettings):
     reconciliation_interval_seconds: int = 30
     worker_offline_threshold_seconds: int = 60
 
+    # Outbound notifications (org-wide)
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+    smtp_use_tls: bool = True
+    pushover_app_token: str = ""
+
+    @property
+    def web_base_url(self) -> str:
+        if self.runflow_web_host:
+            return f"https://{self.runflow_web_host.strip()}"
+        if self.cors_origin_list:
+            return self.cors_origin_list[0]
+        return "http://localhost:3000"
+
     @model_validator(mode="after")
     def assemble_database_url(self) -> Self:
         if self.postgres_host and self.postgres_password:

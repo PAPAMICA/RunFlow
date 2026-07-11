@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, EmailStr, Field
 
@@ -121,6 +121,46 @@ class JobUpdate(BaseModel):
     enabled: bool | None = None
     result_parser: str | None = None
     parameters: list[JobParameterCreate] | None = None
+    notification_config: "JobNotificationConfig | None" = None
+    forced_arguments: dict[str, Any] | None = None
+
+
+class EmailNotificationConfig(BaseModel):
+    enabled: bool = False
+    recipients: list[str] = Field(default_factory=list)
+
+
+class PushoverNotificationConfig(BaseModel):
+    enabled: bool = False
+    user_key: str = ""
+    app_token: str | None = None
+
+
+class JobNotificationConfig(BaseModel):
+    enabled: bool = False
+    on_success: bool = True
+    on_failure: bool = True
+    email: EmailNotificationConfig = Field(default_factory=EmailNotificationConfig)
+    pushover: PushoverNotificationConfig = Field(default_factory=PushoverNotificationConfig)
+
+
+class JobNotificationConfigResponse(BaseModel):
+    enabled: bool = False
+    on_success: bool = True
+    on_failure: bool = True
+    email: EmailNotificationConfig = Field(default_factory=EmailNotificationConfig)
+    pushover: PushoverNotificationConfig = Field(default_factory=PushoverNotificationConfig)
+    pushover_user_key_set: bool = False
+
+
+class NotificationTestRequest(BaseModel):
+    channel: Literal["email", "pushover"]
+
+
+class NotificationTestResponse(BaseModel):
+    channel: str
+    success: bool
+    message: str
 
 
 class JobResponse(BaseModel):
@@ -143,6 +183,8 @@ class JobResponse(BaseModel):
     enabled: bool
     git_config: GitConfig | None = None
     has_env_file: bool = False
+    forced_arguments: dict[str, Any] = Field(default_factory=dict)
+    notification_config: JobNotificationConfigResponse | None = None
     parameters: list[JobParameterResponse] = Field(default_factory=list)
 
 

@@ -4,10 +4,13 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { GitBranch, Play, Save } from "lucide-react";
+import { GitBranch, Bell, Play, Save } from "lucide-react";
 import { AskAIPanel } from "@/components/AskAIPanel";
 import { AppShell } from "@/components/AppShell";
 import { DataTable } from "@/components/DataTable";
+import { ForcedArgumentsEditor } from "@/components/ForcedArgumentsEditor";
+import { FavoriteButton } from "@/components/FavoriteButton";
+import { JobNotificationsForm } from "@/components/JobNotificationsForm";
 import { JobRunForm } from "@/components/JobRunForm";
 import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -19,10 +22,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { api, Job, JobFileNode, JobStats, Run } from "@/lib/api";
+import { buildRunArguments, defaultArgsFromJob } from "@/lib/job-args";
 
 const MonacoEditor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
 
-type Tab = "overview" | "source" | "code" | "parameters" | "runs" | "run";
+type Tab = "overview" | "source" | "code" | "parameters" | "runs" | "run" | "notifications";
 
 export default function JobDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -55,10 +59,7 @@ export default function JobDetailPage() {
         setBranch(j.git_config.branch ?? "main");
         setRepoPath(j.git_config.path ?? "");
       }
-      const defaults: Record<string, string> = {};
-      for (const p of j.parameters) {
-        if (p.default_value != null) defaults[p.name] = String(p.default_value);
-      }
+      const defaults: Record<string, string> = defaultArgsFromJob(j);
       setRunArgs(defaults);
     }).catch(console.error);
     api.getJobStats(id).then(setStats).catch(console.error);
@@ -112,14 +113,7 @@ export default function JobDetailPage() {
     setRunning(true);
     setRunResult("Mise en file d'attente…");
     try {
-      const args: Record<string, unknown> = {};
-      for (const p of job.parameters) {
-        const raw = runArgs[p.name];
-        if (raw === undefined || raw === "") continue;
-        if (p.param_type === "boolean") args[p.name] = raw === "true";
-        else if (p.param_type === "integer") args[p.name] = parseInt(raw, 10);
-        else args[p.name] = raw;
-      }
+      const args = buildRunArguments(job, runArgs);
       const queued = await api.runJob(job.slug, args, false) as { run_id: string; status: string };
       router.push(`/runs/${queued.run_id}`);
     } catch (err) {
@@ -140,11 +134,12 @@ export default function JobDetailPage() {
     );
   }
 
-  const tabs: { key: Tab; label: string }[] = [
+  const tabs: { key: Tab; label: string; icon?: typeof Bell }[] = [
     { key: "overview", label: "Vue d'ensemble" },
     { key: "source", label: "Source & .env" },
     { key: "code", label: "Code" },
     { key: "parameters", label: "Paramètres" },
+    { key: "notifications", label: "Notifications", icon: Bell },
     { key: "runs", label: "Exécutions" },
     { key: "run", label: "Lancer" },
   ];
@@ -159,16 +154,19 @@ export default function JobDetailPage() {
           { label: job.name },
         ]}
         action={
-          <Button onClick={() => setTab("run")} size="lg">
-            <Play className="h-4 w-4" />
-            Lancer
-          </Button>
+          <div className="flex items-center gap-2">
+            <FavoriteButton jobId={job.id} variant="outline" />
+            <Button onClick={() => setTab("run")} size="lg">
+              <Play className="h-4 w-4" />
+              Lancer
+            </Button>
+          </div>
         }
       />
 
       <div className="mb-6 pb-2 border-b border-border">
         <Tabs
-          items={tabs.map((t) => ({ key: t.key, label: t.label }))}
+          items={tabs.map((t) => ({ key: t.key, label: t.label, icon: t.icon }))}
           active={tab}
           onChange={(k) => setTab(k as Tab)}
         />
@@ -309,23 +307,44 @@ export default function JobDetailPage() {
       )}
 
       {tab === "parameters" && (
-        <Card className="max-w-lg">
-          <CardContent className="pt-5 space-y-3">
-            {job.parameters.length === 0 ? (
-              <p className="text-muted-foreground text-sm">Aucun paramètre — ajoutez-en lors du déploiement.</p>
-            ) : (
-              job.parameters.map((p) => (
-                <div key={p.id} className="rounded-lg border border-border-subtle p-3">
-                  <p className="font-medium font-mono">{p.name}</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {p.label} · {p.param_type}
-                    {p.required && " · requis"}
-                  </p>
-                </div>
-              ))
-            )}
-          </CardContent>
-        </Card>
+        <div className="space-y-6 max-w-2xl">
+          <ForcedArgumentsEditor
+            job={job}
+            onSave={async (forced) => {
+              const updated = await api.updateJob(id, { forced_arguments: forced });
+              setJob(updated);
+            }}
+          />
+          <Card>
+            <CardContent className="pt-5 space-y-3">
+              <p className="text-sm font-medium">Paramètres détectés</p>
+              {job.parameters.length === 0 ? (
+                <p className="text-muted-foreground text-sm">
+                  Aucun paramètre — les arguments forcés suffisent pour lancer le job.
+                </p>
+              ) : (
+                job.parameters.map((p) => (
+                  <div key={p.id} className="rounded-lg border border-border-subtle p-3">
+                    <p className="font-medium font-mono">{p.name}</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {p.label} · {p.param_type}
+                      {p.required && " · requis"}
+                      {job.forced_arguments?.[p.name] !== undefined && " · forcé"}
+                    </p>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {tab === "notifications" && job && (
+        <JobNotificationsForm
+          jobId={id}
+          job={job}
+          onSaved={(updated) => setJob(updated)}
+        />
       )}
 
       {tab === "runs" && (

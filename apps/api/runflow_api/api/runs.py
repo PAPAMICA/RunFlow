@@ -134,7 +134,11 @@ async def run_job(
             raise HTTPException(status_code=409, detail="Job already has an active run")
 
     try:
-        validated_args = validate_job_arguments(job.parameters, payload.arguments)
+        validated_args = validate_job_arguments(
+            job.parameters,
+            payload.arguments,
+            forced_arguments=job.forced_arguments or {},
+        )
     except ParameterValidationError as exc:
         raise HTTPException(status_code=422, detail=exc.errors) from exc
 

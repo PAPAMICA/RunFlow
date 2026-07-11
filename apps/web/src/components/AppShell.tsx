@@ -17,6 +17,7 @@ import {
   Settings,
   Shield,
   Sparkles,
+  Star,
   Workflow,
   X,
   Zap,
@@ -26,6 +27,7 @@ import { cn } from "@/lib/utils";
 
 const mainNav = [
   { href: "/dashboard", label: "Tableau de bord", icon: LayoutDashboard },
+  { href: "/favorites", label: "Favoris", icon: Star },
   { href: "/jobs", label: "Jobs", icon: Boxes },
   { href: "/workflows", label: "Workflows", icon: Workflow },
   { href: "/runs", label: "Exécutions", icon: Play },

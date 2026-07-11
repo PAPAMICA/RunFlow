@@ -7,9 +7,13 @@ RunFlow supporte plusieurs types de déclencheurs pour lancer des jobs ou workfl
 | Type | Description |
 |------|-------------|
 | `webhook` | HTTP POST sur `/api/v1/hooks/{hook_token}` |
-| `schedule` | Expression cron (`config.cron`) |
+| `git_push` | Webhook GitHub / GitLab / Bitbucket (même URL hooks) |
+| `schedule` | Expression cron (`config.cron`) ou mode simple |
 | `email` | Boîte IMAP + règles de matching |
+| `http_poll` | Surveillance périodique d'une URL (changement de contenu) |
+| `run_event` | Déclenché à la fin d'un autre job (succès/échec) |
 | `manual` | Lancement via UI ou API |
+| `api` | Lancement via clé API |
 | `workflow` | Déclenché par un nœud de workflow |
 
 ## Webhook

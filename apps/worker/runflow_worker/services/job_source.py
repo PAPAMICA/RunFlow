@@ -8,7 +8,12 @@ from collections.abc import Callable
 from pathlib import Path
 
 from runflow_shared import SourceType
-from runflow_shared.git_sync import apply_overlay_files, resolve_entrypoint, sync_git_to_dir, validate_job_entrypoint, write_internal_files
+from runflow_shared.git_sync import (
+    apply_overlay_files,
+    discover_entrypoint,
+    sync_git_to_dir,
+    write_internal_files,
+)
 
 from runflow_worker.config import get_settings
 
@@ -51,7 +56,11 @@ def materialize_job_workspace(
         git_subpath = ""
 
     entrypoint = job.get("entrypoint", "main.py")
-    resolved = resolve_entrypoint(entrypoint, git_subpath)
-    validate_job_entrypoint(workspace_job, resolved, configured=entrypoint)
+    try:
+        resolved = discover_entrypoint(workspace_job, entrypoint, git_subpath, configured=entrypoint)
+    except FileNotFoundError as exc:
+        raise RuntimeError(str(exc)) from exc
     job["resolved_entrypoint"] = resolved
+    if resolved != entrypoint:
+        _emit(on_system_log, f"Entrypoint ajusté : {entrypoint} → {resolved}")
     _emit(on_system_log, f"Entrypoint : {resolved}")

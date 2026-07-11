@@ -35,9 +35,15 @@ class TriggerType(StrEnum):
     MANUAL = "manual"
     API = "api"
     WEBHOOK = "webhook"
+    GIT_PUSH = "git_push"
     SCHEDULE = "schedule"
     EMAIL = "email"
+    HTTP_POLL = "http_poll"
+    RUN_EVENT = "run_event"
     WORKFLOW = "workflow"
+
+
+HOOK_TRIGGER_TYPES = frozenset({TriggerType.WEBHOOK, TriggerType.GIT_PUSH})
 
 
 class LogStream(StrEnum):
