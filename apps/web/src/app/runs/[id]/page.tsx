@@ -7,13 +7,17 @@ import {
   ArrowLeft,
   Ban,
   Bug,
+  CheckCircle2,
   Clock,
   Copy,
   ExternalLink,
   GitBranch,
+  PanelRightClose,
+  PanelRightOpen,
   RefreshCw,
   RotateCw,
   Terminal,
+  XCircle,
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { RunLogViewer } from "@/components/RunLogViewer";
@@ -21,13 +25,10 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Tabs } from "@/components/ui/tabs";
 import { api, Job, Run, streamRunLogs } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const TERMINAL = new Set(["success", "failed", "timeout", "cancelled", "skipped"]);
-
-type SideTab = "details" | "result" | "error";
 
 function formatDuration(seconds?: number) {
   if (seconds == null) return "—";
@@ -57,7 +58,7 @@ export default function RunDetailPage() {
   const [search, setSearch] = useState("");
   const [copied, setCopied] = useState(false);
   const [copiedCurl, setCopiedCurl] = useState(false);
-  const [sideTab, setSideTab] = useState<SideTab>("details");
+  const [panelOpen, setPanelOpen] = useState(true);
   const [busy, setBusy] = useState<"cancel" | "rerun" | null>(null);
   const [actionError, setActionError] = useState("");
 
@@ -81,9 +82,20 @@ export default function RunDetailPage() {
   }, [id]);
 
   useEffect(() => {
-    if (run?.error) setSideTab("error");
-    else if (run?.result) setSideTab("result");
-  }, [run?.error, run?.result]);
+    if (typeof window !== "undefined") {
+      setPanelOpen(localStorage.getItem("runflow.run.panel") !== "0");
+    }
+  }, []);
+
+  function togglePanel() {
+    setPanelOpen((open) => {
+      const next = !open;
+      if (typeof window !== "undefined") {
+        localStorage.setItem("runflow.run.panel", next ? "1" : "0");
+      }
+      return next;
+    });
+  }
 
   function copyRunId() {
     navigator.clipboard.writeText(id);
@@ -146,14 +158,8 @@ export default function RunDetailPage() {
   }
 
   const isLive = !TERMINAL.has(run.status);
+  const isTerminal = !isLive;
   const hasArgs = Object.keys(run.arguments ?? {}).length > 0;
-  const sideTabs = (
-    [
-      { key: "details" as const, label: "Détails", show: true },
-      { key: "result" as const, label: "Résultat", show: Boolean(run.result) },
-      { key: "error" as const, label: "Erreur", show: Boolean(run.error) },
-    ] as const
-  ).filter((t) => t.show);
 
   return (
     <AppShell>
@@ -235,6 +241,14 @@ export default function RunDetailPage() {
                 Actualiser
               </Button>
             )}
+            <Button variant="outline" size="sm" onClick={togglePanel}>
+              {panelOpen ? (
+                <PanelRightClose className="h-3.5 w-3.5" />
+              ) : (
+                <PanelRightOpen className="h-3.5 w-3.5" />
+              )}
+              Détails
+            </Button>
           </div>
         </div>
 
@@ -265,26 +279,41 @@ export default function RunDetailPage() {
           />
         </div>
 
-        {/* Logs + panneau latéral */}
-        <div className="grid gap-4 lg:grid-cols-[1fr_300px] xl:grid-cols-[1fr_340px] min-h-0">
-          <RunLogViewer
-            logs={logs}
-            status={run.status}
-            search={search}
-            onSearchChange={setSearch}
-            debugRun={run.debug}
-          />
+        {/* Encart résultat / erreur */}
+        {isTerminal && <RunOutcome run={run} />}
 
-          <Card className="flex flex-col min-h-0 lg:max-h-[calc(100dvh-17rem)] lg:overflow-hidden">
-            <CardHeader className="pb-2 shrink-0">
-              <Tabs
-                items={sideTabs.map((t) => ({ key: t.key, label: t.label }))}
-                active={sideTab}
-                onChange={(k) => setSideTab(k as SideTab)}
-              />
-            </CardHeader>
-            <CardContent className="flex-1 min-h-0 overflow-y-auto pt-2 pb-4">
-              {sideTab === "details" && (
+        {/* Logs + panneau latéral */}
+        <div
+          className={cn(
+            "grid gap-4 min-h-0",
+            panelOpen ? "lg:grid-cols-[1fr_300px] xl:grid-cols-[1fr_340px]" : "grid-cols-1"
+          )}
+        >
+          <div className="min-w-0">
+            <RunLogViewer
+              logs={logs}
+              status={run.status}
+              search={search}
+              onSearchChange={setSearch}
+              debugRun={run.debug}
+            />
+          </div>
+
+          {panelOpen && (
+            <Card className="flex flex-col min-h-0 lg:max-h-[calc(100dvh-17rem)] lg:overflow-hidden">
+              <CardHeader className="pb-2 shrink-0">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold">Détails</h3>
+                  <button
+                    onClick={togglePanel}
+                    aria-label="Réduire le panneau"
+                    className="text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    <PanelRightClose className="h-4 w-4" />
+                  </button>
+                </div>
+              </CardHeader>
+              <CardContent className="flex-1 min-h-0 overflow-y-auto pt-2 pb-4">
                 <div className="space-y-4 text-sm">
                   <div>
                     <p className="text-xs text-muted-foreground mb-1">Run ID</p>
@@ -337,24 +366,88 @@ export default function RunDetailPage() {
                     </Link>
                   )}
                 </div>
-              )}
-
-              {sideTab === "result" && run.result && (
-                <pre className="text-xs font-mono bg-black/30 rounded-lg p-3 overflow-auto whitespace-pre-wrap">
-                  {JSON.stringify(run.result, null, 2)}
-                </pre>
-              )}
-
-              {sideTab === "error" && run.error && (
-                <pre className="text-xs font-mono text-destructive/90 bg-destructive/10 rounded-lg p-3 overflow-auto whitespace-pre-wrap">
-                  {run.error}
-                </pre>
-              )}
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
     </AppShell>
+  );
+}
+
+function RunOutcome({ run }: { run: Run }) {
+  const success = run.status === "success";
+  const hasResult = run.result != null && Object.keys(run.result as object).length > 0;
+
+  if (success) {
+    return (
+      <Card className="border-success/30 bg-success/5">
+        <CardContent className="py-4 space-y-3">
+          <div className="flex items-center gap-2 text-success">
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
+            <h3 className="text-sm font-semibold">
+              Exécution réussie
+              {run.exit_code != null && (
+                <span className="ml-2 text-xs font-normal text-muted-foreground">
+                  code {run.exit_code}
+                </span>
+              )}
+            </h3>
+          </div>
+          {hasResult ? (
+            <div>
+              <p className="text-xs text-muted-foreground mb-1.5">Sortie du script</p>
+              <pre className="text-xs font-mono bg-black/30 rounded-lg p-3 overflow-auto max-h-64 whitespace-pre-wrap break-all">
+                {JSON.stringify(run.result, null, 2)}
+              </pre>
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Le script s&apos;est terminé avec succès. Consultez les logs ci-dessous pour la sortie complète.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const statusLabel: Record<string, string> = {
+    failed: "Échec",
+    timeout: "Délai dépassé",
+    cancelled: "Annulée",
+    skipped: "Ignorée",
+  };
+
+  return (
+    <Card className="border-destructive/30 bg-destructive/5">
+      <CardContent className="py-4 space-y-3">
+        <div className="flex items-center gap-2 text-destructive">
+          <XCircle className="h-4 w-4 shrink-0" />
+          <h3 className="text-sm font-semibold">
+            {statusLabel[run.status] ?? "Échec"}
+            {run.exit_code != null && (
+              <span className="ml-2 text-xs font-normal text-muted-foreground">
+                code {run.exit_code}
+              </span>
+            )}
+          </h3>
+        </div>
+        {run.error ? (
+          <div>
+            <p className="text-xs text-muted-foreground mb-1.5">Erreur</p>
+            <pre className="text-xs font-mono text-destructive/90 bg-destructive/10 rounded-lg p-3 overflow-auto max-h-64 whitespace-pre-wrap break-all">
+              {run.error}
+            </pre>
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            {run.status === "cancelled"
+              ? "L'exécution a été annulée."
+              : "Aucun détail d'erreur. Consultez les logs ci-dessous."}
+          </p>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

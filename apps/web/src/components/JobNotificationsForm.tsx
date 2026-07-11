@@ -98,7 +98,7 @@ export function JobNotificationsForm({
   }
 
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="space-y-6 max-w-3xl">
       <Card className="border-border/80">
         <CardContent className="pt-5 space-y-4">
           <div className="flex items-start gap-3">

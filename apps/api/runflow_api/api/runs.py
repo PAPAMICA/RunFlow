@@ -295,23 +295,26 @@ async def stream_run_logs(
 
     async def event_generator():
         nonlocal after_sequence
-        historical = await get_logs_after(session, run_id, after_sequence)
-        for log in historical:
-            after_sequence = log.sequence
-            yield f"id: {log.sequence}\nevent: log\ndata: {json.dumps({'sequence': log.sequence, 'stream': log.stream, 'message': log.message, 'timestamp': log.timestamp.isoformat()})}\n\n"
 
-        yield f"event: status\ndata: {json.dumps({'status': run.status})}\n\n"
-
-        if is_terminal(run.status):
-            yield f"event: done\ndata: {json.dumps({'status': run.status})}\n\n"
-            return
-
+        # Subscribe BEFORE reading history so no log published during the
+        # historical fetch is lost (they'll be de-duplicated by sequence).
         client = await get_valkey()
         pubsub = client.pubsub()
         await pubsub.subscribe(f"{RUN_LOG_CHANNEL_PREFIX}{run_id}", f"{RUN_STATUS_CHANNEL_PREFIX}{run_id}")
 
-        last_ping = time.monotonic()
         try:
+            historical = await get_logs_after(session, run_id, after_sequence)
+            for log in historical:
+                after_sequence = log.sequence
+                yield f"id: {log.sequence}\nevent: log\ndata: {json.dumps({'sequence': log.sequence, 'stream': log.stream, 'message': log.message, 'timestamp': log.timestamp.isoformat()})}\n\n"
+
+            yield f"event: status\ndata: {json.dumps({'status': run.status})}\n\n"
+
+            if is_terminal(run.status):
+                yield f"event: done\ndata: {json.dumps({'status': run.status})}\n\n"
+                return
+
+            last_ping = time.monotonic()
             while True:
                 message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
                 if message and message.get("type") == "message":

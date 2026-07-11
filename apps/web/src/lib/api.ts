@@ -436,6 +436,11 @@ export function streamRunLogs(
   let finished = false;
   let lastSequence = 0;
 
+  // If no data (not even a keep-alive ping) is received within this window, the
+  // connection is considered dead (e.g. proxy dropped it silently) and we force
+  // a reconnect. The server pings every ~15s, so 35s is a safe threshold.
+  const STALE_TIMEOUT = 35000;
+
   const sleep = (ms: number) =>
     new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -445,62 +450,81 @@ export function streamRunLogs(
     // Resume where we left off so no log is missed after a reconnect.
     if (lastSequence > 0) headers["Last-Event-ID"] = String(lastSequence);
 
-    const res = await fetch(`${API_URL}/api/v1/runs/${runId}/logs/stream`, {
-      headers,
-      signal: controller.signal,
-    });
+    // Per-connection controller so the inactivity watchdog can drop just this
+    // socket (and trigger a reconnect) without cancelling the whole stream.
+    const connController = new AbortController();
+    const onOuterAbort = () => connController.abort();
+    controller.signal.addEventListener("abort", onOuterAbort);
 
-    // Client errors (auth/not found) are not recoverable — stop retrying.
-    if (res.status >= 400 && res.status < 500) {
-      finished = true;
-      return;
-    }
-    const reader = res.body?.getReader();
-    if (!reader) throw new Error("No stream body");
+    let watchdog: ReturnType<typeof setTimeout> | undefined;
+    const armWatchdog = () => {
+      if (watchdog) clearTimeout(watchdog);
+      watchdog = setTimeout(() => connController.abort(), STALE_TIMEOUT);
+    };
 
-    const decoder = new TextDecoder();
-    let buffer = "";
+    try {
+      const res = await fetch(`${API_URL}/api/v1/runs/${runId}/logs/stream`, {
+        headers,
+        signal: connController.signal,
+      });
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const parts = buffer.split("\n\n");
-      buffer = parts.pop() || "";
-      for (const part of parts) {
-        const lines = part.split("\n");
-        let event = "message";
-        let data = "";
-        let eventId = "";
-        for (const line of lines) {
-          if (line.startsWith("event:")) event = line.slice(6).trim();
-          else if (line.startsWith("data:")) data = line.slice(5).trim();
-          else if (line.startsWith("id:")) eventId = line.slice(3).trim();
-          // lines starting with ":" are keep-alive comments — ignored
-        }
-        if (eventId && /^\d+$/.test(eventId)) {
-          lastSequence = Math.max(lastSequence, parseInt(eventId, 10));
-        }
-        if (!data) continue;
-        let parsed: { sequence?: number; stream?: string; message?: string; timestamp?: string; status?: string };
-        try {
-          parsed = JSON.parse(data);
-        } catch {
-          continue;
-        }
-        if (event === "log") {
-          if (typeof parsed.sequence === "number") {
-            lastSequence = Math.max(lastSequence, parsed.sequence);
+      // Client errors (auth/not found) are not recoverable — stop retrying.
+      if (res.status >= 400 && res.status < 500) {
+        finished = true;
+        return;
+      }
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error("No stream body");
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+      armWatchdog();
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        armWatchdog();
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop() || "";
+        for (const part of parts) {
+          const lines = part.split("\n");
+          let event = "message";
+          let data = "";
+          let eventId = "";
+          for (const line of lines) {
+            if (line.startsWith("event:")) event = line.slice(6).trim();
+            else if (line.startsWith("data:")) data = line.slice(5).trim();
+            else if (line.startsWith("id:")) eventId = line.slice(3).trim();
+            // lines starting with ":" are keep-alive comments — ignored
           }
-          onLog(parsed as { sequence: number; stream: string; message: string; timestamp: string });
-        } else if (event === "status") {
-          if (parsed.status) onStatus(parsed.status);
-        } else if (event === "done") {
-          finished = true;
-          onDone();
-          return;
+          if (eventId && /^\d+$/.test(eventId)) {
+            lastSequence = Math.max(lastSequence, parseInt(eventId, 10));
+          }
+          if (!data) continue;
+          let parsed: { sequence?: number; stream?: string; message?: string; timestamp?: string; status?: string };
+          try {
+            parsed = JSON.parse(data);
+          } catch {
+            continue;
+          }
+          if (event === "log") {
+            if (typeof parsed.sequence === "number") {
+              lastSequence = Math.max(lastSequence, parsed.sequence);
+            }
+            onLog(parsed as { sequence: number; stream: string; message: string; timestamp: string });
+          } else if (event === "status") {
+            if (parsed.status) onStatus(parsed.status);
+          } else if (event === "done") {
+            finished = true;
+            onDone();
+            return;
+          }
         }
       }
+    } finally {
+      if (watchdog) clearTimeout(watchdog);
+      controller.signal.removeEventListener("abort", onOuterAbort);
     }
   }
 

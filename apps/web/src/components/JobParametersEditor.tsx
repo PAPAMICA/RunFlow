@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { GripVertical, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react";
 import { api, Job, JobParameterInput } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -25,8 +25,7 @@ function fromJob(job: Job): EditableParam[] {
       description: p.description ?? "",
       param_type: p.param_type ?? "string",
       required: p.required ?? false,
-      default_value:
-        p.default_value == null ? "" : String(p.default_value),
+      default_value: p.default_value == null ? "" : String(p.default_value),
       options: p.options ?? [],
       enabled: p.enabled !== false,
     }));
@@ -46,6 +45,9 @@ function emptyParam(): EditableParam {
 }
 
 const NEEDS_OPTIONS = new Set(["select", "multi_select"]);
+
+const GRID =
+  "lg:grid lg:grid-cols-[36px_minmax(0,1.3fr)_minmax(0,1.3fr)_170px_minmax(0,1fr)_150px_36px] lg:items-center lg:gap-3";
 
 export function JobParametersEditor({
   job,
@@ -83,9 +85,7 @@ export function JobParametersEditor({
   async function save() {
     setError("");
     setMsg("");
-    const cleaned = params
-      .map((p) => ({ ...p, name: p.name.trim() }))
-      .filter((p) => p.name);
+    const cleaned = params.map((p) => ({ ...p, name: p.name.trim() })).filter((p) => p.name);
 
     const names = cleaned.map((p) => p.name);
     const dup = names.find((n, idx) => names.indexOf(n) !== idx);
@@ -101,12 +101,8 @@ export function JobParametersEditor({
       param_type: p.param_type,
       required: p.required,
       default_value:
-        p.default_value === "" || p.default_value == null
-          ? undefined
-          : p.default_value,
-      options: NEEDS_OPTIONS.has(p.param_type)
-        ? (p.options ?? []).filter(Boolean)
-        : undefined,
+        p.default_value === "" || p.default_value == null ? undefined : p.default_value,
+      options: NEEDS_OPTIONS.has(p.param_type) ? (p.options ?? []).filter(Boolean) : undefined,
       position: idx,
       enabled: p.enabled,
     }));
@@ -127,12 +123,12 @@ export function JobParametersEditor({
   return (
     <Card>
       <CardContent className="pt-5 space-y-4">
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <p className="text-sm font-medium">Paramètres du job</p>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Éditez les arguments, réordonnez-les et activez/désactivez-les.
-              Un argument désactivé n&apos;est pas demandé au lancement ni transmis au script.
+              Éditez, réordonnez et activez/désactivez les arguments. Un argument désactivé
+              n&apos;est pas demandé au lancement ni transmis au script.
             </p>
           </div>
           <Button type="button" variant="outline" size="sm" onClick={() => setParams((p) => [...p, emptyParam()])}>
@@ -142,109 +138,142 @@ export function JobParametersEditor({
         </div>
 
         {params.length === 0 ? (
-          <p className="text-sm text-muted-foreground rounded-lg border border-dashed border-border px-4 py-6 text-center">
+          <p className="text-sm text-muted-foreground rounded-lg border border-dashed border-border px-4 py-8 text-center">
             Aucun paramètre. Ajoutez-en un ou synchronisez la source du job.
           </p>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-2">
+            {/* Column headers (desktop only) */}
+            <div className={cn(GRID, "hidden px-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground")}>
+              <span />
+              <span>Nom (argument)</span>
+              <span>Label</span>
+              <span>Type</span>
+              <span>Valeur par défaut</span>
+              <span>État</span>
+              <span />
+            </div>
+
             {params.map((p, i) => (
               <div
                 key={i}
                 className={cn(
-                  "rounded-lg border p-3 transition-colors",
-                  p.enabled
-                    ? "border-border bg-card"
-                    : "border-border-subtle bg-card/40 opacity-70"
+                  "rounded-lg border px-2 py-2 transition-colors",
+                  p.enabled ? "border-border bg-card" : "border-border-subtle bg-card/40"
                 )}
               >
-                <div className="flex items-start gap-3">
-                  <div className="flex flex-col items-center gap-1 pt-1.5">
+                <div className={GRID}>
+                  {/* reorder */}
+                  <div className="hidden lg:flex flex-col items-center justify-center">
                     <button
                       type="button"
                       onClick={() => move(i, -1)}
                       disabled={i === 0}
-                      className="text-muted-foreground hover:text-foreground disabled:opacity-30"
+                      className="text-muted-foreground hover:text-foreground disabled:opacity-25"
                       aria-label="Monter"
                     >
-                      ▲
+                      <ChevronUp className="h-4 w-4" />
                     </button>
-                    <GripVertical className="h-3.5 w-3.5 text-muted-foreground/50" />
                     <button
                       type="button"
                       onClick={() => move(i, 1)}
                       disabled={i === params.length - 1}
-                      className="text-muted-foreground hover:text-foreground disabled:opacity-30"
+                      className="text-muted-foreground hover:text-foreground disabled:opacity-25"
                       aria-label="Descendre"
                     >
-                      ▼
+                      <ChevronDown className="h-4 w-4" />
                     </button>
                   </div>
 
-                  <div className="flex-1 grid gap-3 sm:grid-cols-2">
-                    <div className="space-y-1">
-                      <Label className="text-xs">Nom (argument)</Label>
-                      <Input
-                        value={p.name}
-                        onChange={(e) => update(i, { name: e.target.value })}
-                        placeholder="cal_only"
-                        className="font-mono text-xs"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Label</Label>
-                      <Input
-                        value={p.label ?? ""}
-                        onChange={(e) => update(i, { label: e.target.value })}
-                        placeholder="Calendriers uniquement"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Type</Label>
-                      <Select
-                        value={p.param_type}
-                        onChange={(e) => update(i, { param_type: e.target.value })}
-                      >
-                        <option value="string">Texte</option>
-                        <option value="integer">Entier</option>
-                        <option value="float">Décimal</option>
-                        <option value="boolean">Booléen (valeur true/false)</option>
-                        <option value="flag">Flag (présent/absent)</option>
-                        <option value="select">Liste</option>
-                        <option value="multi_select">Liste multiple</option>
-                        <option value="secret">Secret</option>
-                      </Select>
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Valeur par défaut</Label>
-                      <Input
-                        value={
-                          p.default_value == null ? "" : String(p.default_value)
-                        }
-                        onChange={(e) => update(i, { default_value: e.target.value })}
-                        placeholder={p.param_type === "flag" ? "false" : "—"}
-                        className="text-xs"
-                      />
-                    </div>
-                    {NEEDS_OPTIONS.has(p.param_type) && (
-                      <div className="space-y-1 sm:col-span-2">
-                        <Label className="text-xs">Options (séparées par des virgules)</Label>
-                        <Input
-                          value={(p.options ?? []).join(", ")}
-                          onChange={(e) =>
-                            update(i, {
-                              options: e.target.value
-                                .split(",")
-                                .map((s) => s.trim())
-                                .filter(Boolean),
-                            })
-                          }
-                          placeholder="prod, staging, dev"
-                        />
-                      </div>
-                    )}
+                  <div className="space-y-1 lg:space-y-0">
+                    <Label className="text-[11px] lg:hidden">Nom</Label>
+                    <Input
+                      value={p.name}
+                      onChange={(e) => update(i, { name: e.target.value })}
+                      placeholder="cal_only"
+                      className={cn("font-mono text-xs", !p.enabled && "opacity-70")}
+                    />
                   </div>
 
-                  <div className="flex flex-col items-end gap-3 pl-1">
+                  <div className="space-y-1 lg:space-y-0 mt-2 lg:mt-0">
+                    <Label className="text-[11px] lg:hidden">Label</Label>
+                    <Input
+                      value={p.label ?? ""}
+                      onChange={(e) => update(i, { label: e.target.value })}
+                      placeholder="Calendriers uniquement"
+                      className={cn(!p.enabled && "opacity-70")}
+                    />
+                  </div>
+
+                  <div className="space-y-1 lg:space-y-0 mt-2 lg:mt-0">
+                    <Label className="text-[11px] lg:hidden">Type</Label>
+                    <Select value={p.param_type} onChange={(e) => update(i, { param_type: e.target.value })}>
+                      <option value="string">Texte</option>
+                      <option value="integer">Entier</option>
+                      <option value="float">Décimal</option>
+                      <option value="boolean">Booléen (true/false)</option>
+                      <option value="flag">Flag (présent/absent)</option>
+                      <option value="select">Liste</option>
+                      <option value="multi_select">Liste multiple</option>
+                      <option value="secret">Secret</option>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-1 lg:space-y-0 mt-2 lg:mt-0">
+                    <Label className="text-[11px] lg:hidden">Valeur par défaut</Label>
+                    <Input
+                      value={p.default_value == null ? "" : String(p.default_value)}
+                      onChange={(e) => update(i, { default_value: e.target.value })}
+                      placeholder={p.param_type === "flag" ? "false" : "—"}
+                      className="text-xs"
+                    />
+                  </div>
+
+                  {/* state: enabled + required */}
+                  <div className="flex items-center gap-3 mt-3 lg:mt-0">
+                    <label className="flex items-center gap-1.5 text-xs cursor-pointer select-none" title="Activer / désactiver">
+                      <input
+                        type="checkbox"
+                        checked={p.enabled}
+                        onChange={(e) => update(i, { enabled: e.target.checked })}
+                        className="h-4 w-4 accent-[var(--primary)]"
+                      />
+                      Activé
+                    </label>
+                    <label className="flex items-center gap-1.5 text-xs cursor-pointer select-none" title="Argument requis">
+                      <input
+                        type="checkbox"
+                        checked={p.required}
+                        onChange={(e) => update(i, { required: e.target.checked })}
+                        disabled={!p.enabled}
+                        className="h-4 w-4 accent-[var(--primary)]"
+                      />
+                      Requis
+                    </label>
+                  </div>
+
+                  {/* delete + mobile reorder */}
+                  <div className="flex items-center justify-end gap-1 mt-3 lg:mt-0">
+                    <div className="flex lg:hidden">
+                      <button
+                        type="button"
+                        onClick={() => move(i, -1)}
+                        disabled={i === 0}
+                        className="text-muted-foreground hover:text-foreground disabled:opacity-25 p-1"
+                        aria-label="Monter"
+                      >
+                        <ChevronUp className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => move(i, 1)}
+                        disabled={i === params.length - 1}
+                        className="text-muted-foreground hover:text-foreground disabled:opacity-25 p-1"
+                        aria-label="Descendre"
+                      >
+                        <ChevronDown className="h-4 w-4" />
+                      </button>
+                    </div>
                     <Button
                       type="button"
                       variant="ghost"
@@ -257,34 +286,31 @@ export function JobParametersEditor({
                   </div>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-4 mt-3 pt-3 border-t border-border-subtle pl-9">
-                  <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={p.enabled}
-                      onChange={(e) => update(i, { enabled: e.target.checked })}
-                      className="h-4 w-4 accent-[var(--primary)]"
+                {/* options sub-row (select types) */}
+                {NEEDS_OPTIONS.has(p.param_type) && (
+                  <div className="mt-2 lg:pl-[48px]">
+                    <Label className="text-[11px] text-muted-foreground">Options (séparées par des virgules)</Label>
+                    <Input
+                      value={(p.options ?? []).join(", ")}
+                      onChange={(e) =>
+                        update(i, {
+                          options: e.target.value.split(",").map((s) => s.trim()).filter(Boolean),
+                        })
+                      }
+                      placeholder="prod, staging, dev"
+                      className="mt-1"
                     />
-                    {p.enabled ? "Activé" : "Désactivé"}
-                  </label>
-                  <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={p.required}
-                      onChange={(e) => update(i, { required: e.target.checked })}
-                      disabled={!p.enabled}
-                      className="h-4 w-4 accent-[var(--primary)]"
-                    />
-                    Requis
-                  </label>
-                  {p.name && (
-                    <span className="text-[11px] font-mono text-muted-foreground">
-                      CLI : {p.param_type === "flag"
-                        ? `--${p.name.replace(/_/g, "-")}`
-                        : `--${p.name.replace(/_/g, "-")} <valeur>`}
-                    </span>
-                  )}
-                </div>
+                  </div>
+                )}
+
+                {/* CLI hint */}
+                {p.name && (
+                  <p className="mt-1.5 lg:pl-[48px] text-[11px] font-mono text-muted-foreground">
+                    {p.param_type === "flag"
+                      ? `--${p.name.replace(/_/g, "-")}`
+                      : `--${p.name.replace(/_/g, "-")} <valeur>`}
+                  </p>
+                )}
               </div>
             ))}
           </div>

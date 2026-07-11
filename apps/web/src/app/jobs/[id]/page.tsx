@@ -345,7 +345,8 @@ export default function JobDetailPage() {
       )}
 
       {tab === "source" && (
-        <div className="max-w-3xl space-y-6">
+        <div className="space-y-6">
+        <div className="grid gap-6 xl:grid-cols-2 items-start">
         <Card>
           <CardHeader>
             <CardTitle>Informations générales</CardTitle>
@@ -448,8 +449,9 @@ export default function JobDetailPage() {
             </div>
           </CardContent>
         </Card>
+        </div>
 
-        <Card className="border-destructive/30">
+        <Card className="border-destructive/30 max-w-3xl">
           <CardHeader>
             <CardTitle className="text-destructive">Zone de danger</CardTitle>
           </CardHeader>
@@ -532,15 +534,17 @@ export default function JobDetailPage() {
       )}
 
       {tab === "parameters" && (
-        <div className="space-y-6 max-w-3xl">
+        <div className="space-y-6">
           <JobParametersEditor job={job} onSaved={setJob} />
-          <ForcedArgumentsEditor
-            job={job}
-            onSave={async (forced) => {
-              const updated = await api.updateJob(id, { forced_arguments: forced });
-              setJob(updated);
-            }}
-          />
+          <div className="max-w-3xl">
+            <ForcedArgumentsEditor
+              job={job}
+              onSave={async (forced) => {
+                const updated = await api.updateJob(id, { forced_arguments: forced });
+                setJob(updated);
+              }}
+            />
+          </div>
         </div>
       )}
 
