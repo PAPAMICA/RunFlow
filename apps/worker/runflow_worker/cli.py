@@ -77,6 +77,15 @@ def register(
 
 @app.command("start")
 def start():
+    import logging
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+
     settings = get_settings()
     if not settings.worker_token:
         typer.echo("RUNFLOW_WORKER_TOKEN is required. Run `runflow-worker register` first.", err=True)

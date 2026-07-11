@@ -66,14 +66,19 @@ class DockerExecutor(BaseRunner):
         return hashlib.sha256(req.read_bytes()).hexdigest()[:16]
 
     async def prepare(self, ctx: RunContext) -> None:
+        import logging
+
         from runflow_worker.services.job_source import materialize_job_workspace
 
+        log = logging.getLogger(__name__)
         workspace = Path(ctx.workspace_path)
         workspace_job = workspace / "job"
         workspace.mkdir(parents=True, exist_ok=True)
 
+        log.info("Préparation workspace %s", workspace_job)
         await asyncio.to_thread(materialize_job_workspace, ctx.job, workspace_job)
         ctx.job["job_files_path"] = str(workspace_job)
+        log.info("Workspace prêt — lancement du runner %s", ctx.job.get("runner_type"))
 
         for sub in ("input", "output"):
             (workspace / sub).mkdir(parents=True, exist_ok=True)

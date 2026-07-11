@@ -86,7 +86,7 @@ def _friendly_git_error(message: str, *, had_auth: bool) -> str:
     return message
 
 
-def _run_git(args: list[str], *, cwd: Path | None = None) -> None:
+def _run_git(args: list[str], *, cwd: Path | None = None, timeout: int = 600) -> None:
     env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
     try:
         result = subprocess.run(
@@ -96,11 +96,14 @@ def _run_git(args: list[str], *, cwd: Path | None = None) -> None:
             capture_output=True,
             text=True,
             env=env,
+            timeout=timeout,
         )
         if result.stderr:
             logger.debug("git %s: %s", " ".join(args[:3]), result.stderr.strip())
     except FileNotFoundError as exc:
         raise RuntimeError(GIT_MISSING_MSG) from exc
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f"Timeout Git après {timeout}s : {' '.join(args[:4])}") from exc
     except subprocess.CalledProcessError as exc:
         stderr = (exc.stderr or "").strip()
         stdout = (exc.stdout or "").strip()

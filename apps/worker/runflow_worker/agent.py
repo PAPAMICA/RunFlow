@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import socket
+from datetime import UTC, datetime
 from pathlib import Path
 
 from httpx import ConnectError, HTTPError
@@ -29,6 +30,7 @@ class WorkerAgent:
         hostname = socket.gethostname()
         await self._wait_for_api(hostname)
         heartbeat_task = asyncio.create_task(self._heartbeat_loop(hostname))
+        logger.info("Worker démarré (%s) — en attente de jobs", hostname)
 
         try:
             while True:
@@ -47,6 +49,13 @@ class WorkerAgent:
                     await asyncio.sleep(1)
                     continue
 
+                logger.info(
+                    "Run %s réclamé — job=%s source=%s",
+                    claim["run_id"],
+                    claim["job"].get("slug"),
+                    claim["job"].get("source_type"),
+                )
+                self._current_runs += 1
                 asyncio.create_task(self._execute_run(claim))
         finally:
             heartbeat_task.cancel()
@@ -74,15 +83,32 @@ class WorkerAgent:
                 logger.exception("Heartbeat failed")
             await asyncio.sleep(self.settings.heartbeat_interval)
 
+    async def _push_system_log(self, run_id: str, message: str) -> None:
+        logger.info("[run %s] %s", run_id, message)
+        try:
+            await self.client.push_logs(
+                run_id,
+                [
+                    {
+                        "stream": "system",
+                        "message": message,
+                        "timestamp": datetime.now(UTC).isoformat(),
+                    }
+                ],
+            )
+        except Exception:
+            logger.warning("Impossible d'envoyer le log système pour %s", run_id)
+
     async def _execute_run(self, claim: dict) -> None:
         run_id = claim["run_id"]
-        self._current_runs += 1
+        job = claim["job"]
         workspace_path = str(Path(self.settings.runs_dir) / run_id)
         try:
             await self.client.accept(run_id)
+            await self._push_system_log(run_id, "Run accepté — préparation du workspace")
             ctx = RunContext(
                 run_id=run_id,
-                job=claim["job"],
+                job=job,
                 arguments=claim.get("arguments", {}),
                 workspace_path=workspace_path,
             )
@@ -94,6 +120,7 @@ class WorkerAgent:
                 for i in range(0, len(log_entries), batch_size):
                     await self.client.push_logs(run_id, log_entries[i : i + batch_size])
 
+            await self._push_system_log(run_id, f"Terminé — exit_code={output.exit_code}")
             await self.client.submit_result(
                 run_id,
                 {
@@ -107,6 +134,7 @@ class WorkerAgent:
         except Exception as exc:
             logger.exception("Run %s failed", run_id)
             try:
+                await self._push_system_log(run_id, f"Échec : {exc}")
                 await self.client.report_failure(run_id, {"exit_code": 1, "error": str(exc)})
             except Exception:
                 logger.exception("Failed to report failure for %s", run_id)

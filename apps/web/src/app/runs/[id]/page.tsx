@@ -76,7 +76,13 @@ export default function RunDetailPage() {
           {filtered.map((l) => (
             <div key={l.sequence} className="flex gap-2">
               <span className="text-muted shrink-0">{new Date(l.timestamp).toLocaleTimeString()}</span>
-              <span className={`shrink-0 ${l.stream === "stderr" ? "text-red-400" : "text-blue-400"}`}>
+              <span className={`shrink-0 ${
+                l.stream === "stderr"
+                  ? "text-red-400"
+                  : l.stream === "system"
+                    ? "text-yellow-400"
+                    : "text-blue-400"
+              }`}>
                 [{l.stream}]
               </span>
               <span className="whitespace-pre-wrap">{l.message}</span>

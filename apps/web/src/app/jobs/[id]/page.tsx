@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { GitBranch, Play, Save } from "lucide-react";
 import { AskAIPanel } from "@/components/AskAIPanel";
 import { AppShell } from "@/components/AppShell";
@@ -24,6 +24,7 @@ type Tab = "overview" | "source" | "code" | "parameters" | "runs" | "run";
 
 export default function JobDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
   const [job, setJob] = useState<Job | null>(null);
   const [stats, setStats] = useState<JobStats | null>(null);
   const [jobRuns, setJobRuns] = useState<Run[]>([]);
@@ -107,7 +108,7 @@ export default function JobDetailPage() {
   async function runJob() {
     if (!job) return;
     setRunning(true);
-    setRunResult("");
+    setRunResult("Mise en file d'attente…");
     try {
       const args: Record<string, unknown> = {};
       for (const p of job.parameters) {
@@ -117,12 +118,10 @@ export default function JobDetailPage() {
         else if (p.param_type === "integer") args[p.name] = parseInt(raw, 10);
         else args[p.name] = raw;
       }
-      const result = await api.runJob(job.slug, args, true);
-      setRunResult(JSON.stringify(result, null, 2));
-      api.getJobStats(id).then(setStats).catch(console.error);
+      const queued = await api.runJob(job.slug, args, false) as { run_id: string; status: string };
+      router.push(`/runs/${queued.run_id}`);
     } catch (err) {
       setRunResult(err instanceof Error ? err.message : "Erreur");
-    } finally {
       setRunning(false);
     }
   }

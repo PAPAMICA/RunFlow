@@ -74,7 +74,8 @@ async def worker_heartbeat(
     worker.status = WorkerStatus.ONLINE
     worker.hostname = payload.hostname or worker.hostname
     worker.version = payload.version or worker.version
-    worker.current_runs = payload.current_runs
+    # Ne pas écraser un claim récent : le worker incrémente _current_runs après le claim.
+    worker.current_runs = max(worker.current_runs, payload.current_runs)
     session.add(worker)
     await session.flush()
     return {"status": "ok"}
@@ -88,7 +89,7 @@ async def worker_claim(
     if worker.current_runs >= worker.max_concurrency:
         return None
 
-    run = await claim_next_run(session, worker)
+    run = await claim_next_run(session, worker, timeout_seconds=3.0)
     if not run:
         return None
 

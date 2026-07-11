@@ -1,6 +1,6 @@
 [project]
 name = "runflow"
-version = "0.6.4"
+version = "0.6.5"
 description = "RunFlow - API-first job automation platform"
 readme = "README.md"
 requires-python = ">=3.13"

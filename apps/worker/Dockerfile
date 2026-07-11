@@ -17,5 +17,6 @@ RUN uv sync --package runflow-worker
 
 ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONPATH="/app/apps/worker"
+ENV PYTHONUNBUFFERED=1
 
 CMD ["runflow-worker", "start"]
