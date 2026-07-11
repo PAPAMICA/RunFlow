@@ -99,8 +99,8 @@ def _merge_notification_config(
     user_key = (new_pushover.get("user_key") or "").strip()
     if not user_key or "…" in user_key:
         new_pushover["user_key"] = current.pushover.user_key
-    app_token = new_pushover.get("app_token")
-    if not app_token:
+    app_token = (new_pushover.get("app_token") or "").strip()
+    if not app_token or "…" in app_token:
         new_pushover["app_token"] = current.pushover.app_token
     data["pushover"] = new_pushover
     return data

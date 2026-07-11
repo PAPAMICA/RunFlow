@@ -277,6 +277,7 @@ export interface JobNotificationConfig {
   email: JobNotificationEmailConfig;
   pushover: JobNotificationPushoverConfig;
   pushover_user_key_set?: boolean;
+  pushover_app_token_set?: boolean;
 }
 
 export interface NotificationTestResult {

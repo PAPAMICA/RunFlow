@@ -62,9 +62,10 @@ export function defaultArgsFromJob(job: Job): Record<string, string> {
   const forced = getForcedArgumentKeys(job);
   const defaults: Record<string, string> = {};
   for (const p of getUserFacingParameters(job)) {
+    // The parameter's default value drives its initial state (a flag whose
+    // default is "true" is present by default).
     if (p.default_value != null) defaults[p.name] = String(p.default_value);
-    // A required present/absent flag defaults to "present" (true).
-    else if (p.param_type === "flag") defaults[p.name] = p.required ? "true" : "false";
+    else if (p.param_type === "flag") defaults[p.name] = "false";
   }
   return defaults;
 }

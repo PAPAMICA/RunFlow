@@ -158,6 +158,7 @@ class JobNotificationConfigResponse(BaseModel):
     email: EmailNotificationConfig = Field(default_factory=EmailNotificationConfig)
     pushover: PushoverNotificationConfig = Field(default_factory=PushoverNotificationConfig)
     pushover_user_key_set: bool = False
+    pushover_app_token_set: bool = False
 
 
 class NotificationTestRequest(BaseModel):

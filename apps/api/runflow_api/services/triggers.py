@@ -7,7 +7,9 @@ from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
+from runflow_api.core.parameter_validation import apply_parameter_defaults
 from runflow_api.core.template_engine import render_argument_mapping
 from runflow_api.models import Job, Run, Trigger
 from runflow_api.services.queue import enqueue_run
@@ -45,13 +47,19 @@ async def fire_trigger(
             trigger_id=trigger.id,
         )
 
-    job_result = await session.execute(select(Job).where(Job.id == trigger.target_id))
+    job_result = await session.execute(
+        select(Job).where(Job.id == trigger.target_id).options(selectinload(Job.parameters))
+    )
     job = job_result.scalar_one_or_none()
     if not job or not job.enabled:
         raise ValueError("Target job not found or disabled")
 
     if job.forced_arguments:
         arguments = {**arguments, **job.forced_arguments}
+
+    # Apply the job's parameter defaults (e.g. a flag set to "present by default")
+    # so trigger runs behave like manual runs. Existing/forced args are kept.
+    arguments = apply_parameter_defaults(job.parameters, arguments)
 
     if job.prevent_concurrent_runs:
         active = await session.scalar(

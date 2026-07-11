@@ -26,7 +26,11 @@ def _coerce_value(param: JobParameter, raw: Any) -> Any:
     if raw is None:
         if param.required:
             raise ValueError("required")
-        return param.default_value
+        if param.default_value is None:
+            return None
+        # Coerce the default value through the same type logic (so a flag default
+        # stored as the string "false" becomes the boolean False, etc.).
+        raw = param.default_value
 
     if ptype == ParameterType.STRING:
         return str(raw)
@@ -81,6 +85,31 @@ def _coerce_value(param: JobParameter, raw: Any) -> Any:
     if ptype == ParameterType.RAW:
         return raw
     return raw
+
+
+def apply_parameter_defaults(
+    parameters: list[JobParameter],
+    arguments: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Fill in missing enabled parameters with their (coerced) default value.
+
+    Used for non-manual runs (triggers, schedules…) where arguments are built
+    from a mapping and don't otherwise go through full validation. Existing keys
+    and unknown/extra keys are preserved untouched.
+    """
+    result: dict[str, Any] = dict(arguments or {})
+    for param in parameters:
+        if getattr(param, "enabled", True) is False:
+            continue
+        if param.name in result:
+            continue
+        if param.default_value is None:
+            continue
+        try:
+            result[param.name] = _coerce_value(param, None)
+        except (ValueError, ValidationError, json.JSONDecodeError):
+            continue
+    return result
 
 
 def validate_job_arguments(

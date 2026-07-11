@@ -99,7 +99,9 @@ export function JobParametersEditor({
       label: p.label || undefined,
       description: p.description || undefined,
       param_type: p.param_type,
-      required: p.required,
+      // "Requis" is replaced by the default-value driven model: parameters are
+      // optional and their default value determines their initial state.
+      required: false,
       default_value:
         p.default_value === "" || p.default_value == null ? undefined : p.default_value,
       options: NEEDS_OPTIONS.has(p.param_type) ? (p.options ?? []).filter(Boolean) : undefined,
@@ -221,15 +223,27 @@ export function JobParametersEditor({
 
                   <div className="space-y-1 lg:space-y-0 mt-2 lg:mt-0">
                     <Label className="text-[11px] lg:hidden">Valeur par défaut</Label>
-                    <Input
-                      value={p.default_value == null ? "" : String(p.default_value)}
-                      onChange={(e) => update(i, { default_value: e.target.value })}
-                      placeholder={p.param_type === "flag" ? "false" : "—"}
-                      className="text-xs"
-                    />
+                    {p.param_type === "flag" || p.param_type === "boolean" ? (
+                      <p className="text-xs text-muted-foreground lg:py-2">
+                        {p.default_value === "true"
+                          ? p.param_type === "flag"
+                            ? "présent"
+                            : "true"
+                          : p.param_type === "flag"
+                            ? "absent"
+                            : "false"}
+                      </p>
+                    ) : (
+                      <Input
+                        value={p.default_value == null ? "" : String(p.default_value)}
+                        onChange={(e) => update(i, { default_value: e.target.value })}
+                        placeholder="—"
+                        className="text-xs"
+                      />
+                    )}
                   </div>
 
-                  {/* state: enabled + required */}
+                  {/* state: enabled + default */}
                   <div className="flex items-center gap-3 mt-3 lg:mt-0">
                     <label className="flex items-center gap-1.5 text-xs cursor-pointer select-none" title="Activer / désactiver">
                       <input
@@ -240,16 +254,23 @@ export function JobParametersEditor({
                       />
                       Activé
                     </label>
-                    <label className="flex items-center gap-1.5 text-xs cursor-pointer select-none" title="Argument requis">
-                      <input
-                        type="checkbox"
-                        checked={p.required}
-                        onChange={(e) => update(i, { required: e.target.checked })}
-                        disabled={!p.enabled}
-                        className="h-4 w-4 accent-[var(--primary)]"
-                      />
-                      Requis
-                    </label>
+                    {(p.param_type === "flag" || p.param_type === "boolean") && (
+                      <label
+                        className="flex items-center gap-1.5 text-xs cursor-pointer select-none"
+                        title="Activé/présent par défaut (exécutions manuelles et triggers)"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={p.default_value === "true"}
+                          onChange={(e) =>
+                            update(i, { default_value: e.target.checked ? "true" : "false" })
+                          }
+                          disabled={!p.enabled}
+                          className="h-4 w-4 accent-[var(--primary)]"
+                        />
+                        Défaut
+                      </label>
+                    )}
                   </div>
 
                   {/* delete + mobile reorder */}

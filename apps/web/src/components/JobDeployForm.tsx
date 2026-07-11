@@ -238,6 +238,7 @@ export function JobDeployForm({ projects, onCreated, onCancel }: JobDeployFormPr
           .map((p, i) => ({
             ...p,
             position: i,
+            required: false,
             default_value:
               p.default_value === "" || p.default_value == null ? undefined : p.default_value,
           })),
@@ -504,7 +505,7 @@ export function JobDeployForm({ projects, onCreated, onCancel }: JobDeployFormPr
         ) : (
           <div className="space-y-2">
             {parameters.map((param, i) => (
-              <div key={i} className="grid gap-3 sm:grid-cols-[1.2fr_1.2fr_150px_1fr_auto_auto] sm:items-end rounded-lg border border-border bg-card/40 p-3">
+              <div key={i} className="grid gap-3 sm:grid-cols-[1.2fr_1.2fr_150px_1fr_auto] sm:items-end rounded-lg border border-border bg-card/40 p-3">
                 <div className="space-y-1">
                   <Label className="text-xs">Nom</Label>
                   <Input value={param.name} onChange={(e) => updateParam(i, { name: e.target.value })} placeholder="cal_only" className="font-mono text-xs" />
@@ -528,22 +529,30 @@ export function JobDeployForm({ projects, onCreated, onCancel }: JobDeployFormPr
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">Défaut</Label>
-                  <Input
-                    value={param.default_value == null ? "" : String(param.default_value)}
-                    onChange={(e) => updateParam(i, { default_value: e.target.value })}
-                    placeholder={param.param_type === "flag" ? "false" : "—"}
-                    className="text-xs"
-                  />
+                  {param.param_type === "flag" || param.param_type === "boolean" ? (
+                    <label
+                      className="flex items-center gap-1.5 text-xs cursor-pointer select-none h-9"
+                      title="Activé/présent par défaut (exécutions manuelles et triggers)"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={String(param.default_value) === "true"}
+                        onChange={(e) =>
+                          updateParam(i, { default_value: e.target.checked ? "true" : "false" })
+                        }
+                        className="h-4 w-4 accent-[var(--primary)]"
+                      />
+                      {param.param_type === "flag" ? "présent" : "true"}
+                    </label>
+                  ) : (
+                    <Input
+                      value={param.default_value == null ? "" : String(param.default_value)}
+                      onChange={(e) => updateParam(i, { default_value: e.target.value })}
+                      placeholder="—"
+                      className="text-xs"
+                    />
+                  )}
                 </div>
-                <label className="flex items-center gap-1.5 text-xs cursor-pointer select-none pb-2.5">
-                  <input
-                    type="checkbox"
-                    checked={Boolean(param.required)}
-                    onChange={(e) => updateParam(i, { required: e.target.checked })}
-                    className="h-4 w-4 accent-[var(--primary)]"
-                  />
-                  Requis
-                </label>
                 <Button type="button" variant="ghost" size="icon-sm" onClick={() => setParameters((p) => p.filter((_, j) => j !== i))} aria-label="Supprimer">
                   <Trash2 className="h-4 w-4 text-muted-foreground" />
                 </Button>

@@ -24,6 +24,7 @@ const DEFAULT_CONFIG: JobNotificationConfig = {
   email: { enabled: false, recipients: [] },
   pushover: { enabled: false, user_key: "" },
   pushover_user_key_set: false,
+  pushover_app_token_set: false,
 };
 
 export function JobNotificationsForm({
@@ -40,6 +41,7 @@ export function JobNotificationsForm({
   );
   const [recipientsText, setRecipientsText] = useState("");
   const [pushoverKey, setPushoverKey] = useState("");
+  const [pushoverToken, setPushoverToken] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState("");
   const [testing, setTesting] = useState<"email" | "pushover" | null>(null);
@@ -50,6 +52,7 @@ export function JobNotificationsForm({
     setConfig(nc);
     setRecipientsText((nc.email.recipients ?? []).join("\n"));
     setPushoverKey("");
+    setPushoverToken("");
   }, [job]);
 
   function updateConfig(patch: Partial<JobNotificationConfig>) {
@@ -70,11 +73,13 @@ export function JobNotificationsForm({
         pushover: {
           ...config.pushover,
           user_key: pushoverKey || config.pushover.user_key,
+          app_token: pushoverToken || config.pushover.app_token,
         },
       };
       const updated = await api.updateJob(jobId, { notification_config: payload });
       onSaved(updated);
       setPushoverKey("");
+      setPushoverToken("");
       setSaveMsg("Notifications enregistrées");
     } catch (err) {
       setSaveMsg(err instanceof Error ? err.message : "Erreur");
@@ -209,7 +214,7 @@ export function JobNotificationsForm({
               <div>
                 <p className="font-medium">Pushover</p>
                 <p className="text-xs text-muted-foreground">
-                  Token app global (PUSHOVER_APP_TOKEN) + clé utilisateur par job
+                  Token de l&apos;application + clé utilisateur
                 </p>
               </div>
             </div>
@@ -225,22 +230,44 @@ export function JobNotificationsForm({
               <span className="text-sm">Actif</span>
             </label>
           </div>
-          <div className="space-y-2">
-            <Label>Clé utilisateur Pushover</Label>
-            <Input
-              value={pushoverKey}
-              onChange={(e) => setPushoverKey(e.target.value)}
-              placeholder={
-                config.pushover_user_key_set
-                  ? `${config.pushover.user_key} (laisser vide pour conserver)`
-                  : "uQi…"
-              }
-              className="font-mono text-xs"
-            />
-            {config.pushover_user_key_set && !pushoverKey && (
-              <Badge variant="muted" className="text-[10px]">Clé enregistrée</Badge>
-            )}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label>Token de l&apos;application (API Token)</Label>
+              <Input
+                value={pushoverToken}
+                onChange={(e) => setPushoverToken(e.target.value)}
+                placeholder={
+                  config.pushover_app_token_set
+                    ? `${config.pushover.app_token ?? "••••"} (laisser vide pour conserver)`
+                    : "azG…"
+                }
+                className="font-mono text-xs"
+              />
+              {config.pushover_app_token_set && !pushoverToken && (
+                <Badge variant="muted" className="text-[10px]">Token enregistré</Badge>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label>Clé utilisateur (User Key)</Label>
+              <Input
+                value={pushoverKey}
+                onChange={(e) => setPushoverKey(e.target.value)}
+                placeholder={
+                  config.pushover_user_key_set
+                    ? `${config.pushover.user_key} (laisser vide pour conserver)`
+                    : "uQi…"
+                }
+                className="font-mono text-xs"
+              />
+              {config.pushover_user_key_set && !pushoverKey && (
+                <Badge variant="muted" className="text-[10px]">Clé enregistrée</Badge>
+              )}
+            </div>
           </div>
+          <p className="text-[11px] text-muted-foreground">
+            Créez une application sur pushover.net pour obtenir le token. Si aucun token n&apos;est
+            renseigné, le token global du serveur (PUSHOVER_APP_TOKEN) est utilisé.
+          </p>
           <Button
             variant="outline"
             size="sm"

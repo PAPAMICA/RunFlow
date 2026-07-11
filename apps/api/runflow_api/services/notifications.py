@@ -17,8 +17,9 @@ from sqlalchemy.orm import selectinload
 
 from runflow_api.config import get_settings
 from runflow_api.db import async_session_factory
-from runflow_api.models import Job, Organization, Run
+from runflow_api.models import Job, Organization, Run, RunLog
 from runflow_api.schemas import JobNotificationConfig
+from runflow_api.services.logs import get_logs_after
 from runflow_shared import RunStatus
 
 logger = logging.getLogger(__name__)
@@ -127,12 +128,14 @@ def notification_config_to_response(raw: dict | None) -> dict:
     cfg = parse_notification_config(raw)
     data = cfg.model_dump()
     user_key = cfg.pushover.user_key
+    app_token = cfg.pushover.app_token or ""
     data["pushover"] = {
         "enabled": cfg.pushover.enabled,
         "user_key": mask_pushover_user_key(user_key),
-        "app_token": None,
+        "app_token": mask_pushover_user_key(app_token) or None,
     }
     data["pushover_user_key_set"] = bool(user_key)
+    data["pushover_app_token_set"] = bool(app_token)
     return data
 
 
@@ -161,7 +164,28 @@ def _build_run_url(run_id: str) -> str:
     return f"{settings.web_base_url}/runs/{run_id}"
 
 
-def _build_context(job: Job, run: Run | None, *, test: bool = False) -> dict:
+MAX_OUTPUT_CHARS = 6000
+
+
+def _tail(text: str, max_chars: int = MAX_OUTPUT_CHARS) -> str:
+    text = text.strip()
+    if len(text) <= max_chars:
+        return text
+    return "…(début tronqué)\n" + text[-max_chars:]
+
+
+def _extract_streams(logs: list[RunLog] | None) -> tuple[str, str]:
+    """Return (stdout, stderr) concatenated text from run logs."""
+    if not logs:
+        return "", ""
+    stdout = "\n".join(log.message for log in logs if log.stream == "stdout")
+    stderr = "\n".join(log.message for log in logs if log.stream == "stderr")
+    return stdout.strip(), stderr.strip()
+
+
+def _build_context(
+    job: Job, run: Run | None, *, test: bool = False, logs: list[RunLog] | None = None
+) -> dict:
     status = run.status if run else RunStatus.SUCCESS
     meta = STATUS_META.get(status, STATUS_META[RunStatus.FAILED])
     run_id = run.id if run else "TEST"
@@ -180,6 +204,18 @@ def _build_context(job: Job, run: Run | None, *, test: bool = False) -> dict:
         if run.trigger_type:
             details.append({"label": "Déclencheur", "value": run.trigger_type})
 
+    stdout_text, stderr_text = _extract_streams(logs)
+    output = _tail(stdout_text) if stdout_text else ""
+
+    error_detail: str | None = None
+    if not test and run and status in FAILURE_STATUSES:
+        if run.error:
+            error_detail = run.error
+        elif stderr_text:
+            error_detail = _tail(stderr_text)
+        elif stdout_text:
+            error_detail = _tail(stdout_text)
+
     subject_prefix = "[RunFlow] Test" if test else "[RunFlow]"
     subject = f"{subject_prefix} {meta['label']} — {job.name}"
 
@@ -192,15 +228,25 @@ def _build_context(job: Job, run: Run | None, *, test: bool = False) -> dict:
         "status_bg": meta["bg"],
         "status_border": meta["border"],
         "details": details,
-        "error": None if test else (run.error if run else None),
+        "output": output,
+        "error": error_detail,
         "run_url": run_url,
         "job_name": job.name,
         "pushover_title": f"{meta['emoji']} {job.name}" if not test else f"🔔 Test — {job.name}",
-        "pushover_message": _build_pushover_plain(job, run, test=test),
+        "pushover_message": _build_pushover_plain(
+            job, run, test=test, output=output, error=error_detail
+        ),
     }
 
 
-def _build_pushover_plain(job: Job, run: Run | None, *, test: bool = False) -> str:
+def _build_pushover_plain(
+    job: Job,
+    run: Run | None,
+    *,
+    test: bool = False,
+    output: str = "",
+    error: str | None = None,
+) -> str:
     if test:
         return f"Notification de test pour le job {job.name}."
     status = run.status if run else "unknown"
@@ -213,8 +259,12 @@ def _build_pushover_plain(job: Job, run: Run | None, *, test: bool = False) -> s
         lines.append(f"Durée : {_format_duration(run.duration_seconds)}")
     if run and run.exit_code is not None:
         lines.append(f"Code : {run.exit_code}")
-    if run and run.error:
-        lines.append(f"Erreur : {run.error[:500]}")
+    if error:
+        lines.append("")
+        lines.append(f"Erreur :\n{error[-700:]}")
+    elif output:
+        lines.append("")
+        lines.append(f"Sortie :\n{output[-700:]}")
     return "\n".join(lines)
 
 
@@ -233,7 +283,9 @@ def render_email_text(context: dict) -> str:
     for row in context["details"]:
         lines.append(f"{row['label']}: {row['value']}")
     if context.get("error"):
-        lines.extend(["", f"Erreur: {context['error']}"])
+        lines.extend(["", "Erreur:", context["error"]])
+    elif context.get("output"):
+        lines.extend(["", "Sortie (stdout):", context["output"]])
     lines.extend(["", f"Voir l'exécution: {context['run_url']}"])
     return "\n".join(lines)
 
@@ -304,13 +356,16 @@ async def send_pushover(
 
 
 async def deliver_notifications_for_job(
-    job: Job, run: Run, smtp: SmtpSettings | None = None
+    job: Job,
+    run: Run,
+    smtp: SmtpSettings | None = None,
+    logs: list[RunLog] | None = None,
 ) -> None:
     config = parse_notification_config(job.notification_config)
     if not should_notify(config, run.status):
         return
 
-    context = _build_context(job, run)
+    context = _build_context(job, run, logs=logs)
     tasks: list[asyncio.Task[None]] = []
 
     if config.email.enabled and config.email.recipients:
@@ -407,4 +462,5 @@ async def _deliver_notifications(run_id: str) -> None:
         )
         org = org_result.scalar_one_or_none()
         smtp = resolve_smtp_settings(org.smtp_config if org else None)
-        await deliver_notifications_for_job(run.job, run, smtp)
+        logs = await get_logs_after(session, run.id, 0)
+        await deliver_notifications_for_job(run.job, run, smtp, logs)

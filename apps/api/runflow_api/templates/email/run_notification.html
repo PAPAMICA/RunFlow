@@ -41,7 +41,12 @@
               {% if error %}
               <div style="margin-top:16px;padding:14px 16px;border-radius:10px;background:#2a1518;border:1px solid #5c2b33;">
                 <p style="margin:0 0 6px;font-size:12px;font-weight:700;color:#f87171;">Erreur</p>
-                <p style="margin:0;font-size:13px;line-height:1.5;color:#fecaca;white-space:pre-wrap;">{{ error }}</p>
+                <pre style="margin:0;font-size:12px;line-height:1.5;color:#fecaca;white-space:pre-wrap;word-break:break-word;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;max-height:360px;overflow:auto;">{{ error }}</pre>
+              </div>
+              {% elif output %}
+              <div style="margin-top:16px;padding:14px 16px;border-radius:10px;background:#12151c;border:1px solid #2a3142;">
+                <p style="margin:0 0 6px;font-size:12px;font-weight:700;color:#8b95a8;">Sortie (stdout)</p>
+                <pre style="margin:0;font-size:12px;line-height:1.5;color:#c5ccda;white-space:pre-wrap;word-break:break-word;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;max-height:360px;overflow:auto;">{{ output }}</pre>
               </div>
               {% endif %}
             </td>
