@@ -1,6 +1,6 @@
 [project]
 name = "runflow"
-version = "0.6.0"
+version = "0.6.1"
 description = "RunFlow - API-first job automation platform"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -23,7 +23,7 @@ dev = [
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["apps/api/tests", "apps/worker/tests", "packages/python-sdk/tests"]
+testpaths = ["apps/api/tests", "apps/worker/tests", "packages/python-sdk/tests", "packages/runflow-shared/tests"]
 
 [tool.ruff]
 line-length = 100

@@ -22,6 +22,8 @@ class WorkerSettings(BaseSettings):
     bash_runner_image: str = "runflow/runner-bash:0.1.0"
     ansible_runner_image: str = "runflow/runner-ansible:0.1.0"
     docker_enabled: bool = Field(default=True, validation_alias="DOCKER_ENABLED")
+    worker_data_dir: str = "/worker-data"
+    runs_dir: str = "/worker-data/runs"
     pip_cache_dir: str = "/worker-data/pip-cache"
 
 

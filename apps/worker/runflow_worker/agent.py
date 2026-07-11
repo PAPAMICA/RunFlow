@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import socket
+from pathlib import Path
 
 from httpx import ConnectError, HTTPError
 
@@ -76,13 +77,14 @@ class WorkerAgent:
     async def _execute_run(self, claim: dict) -> None:
         run_id = claim["run_id"]
         self._current_runs += 1
+        workspace_path = str(Path(self.settings.runs_dir) / run_id)
         try:
             await self.client.accept(run_id)
             ctx = RunContext(
                 run_id=run_id,
                 job=claim["job"],
                 arguments=claim.get("arguments", {}),
-                workspace_path=claim["workspace_path"],
+                workspace_path=workspace_path,
             )
             output = await self.executor.run(ctx)
 

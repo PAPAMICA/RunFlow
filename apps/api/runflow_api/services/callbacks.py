@@ -24,6 +24,11 @@ async def deliver_callbacks_for_run(run_id: str) -> None:
     asyncio.create_task(_deliver_callbacks(run_id))
 
 
+def schedule_callbacks_for_run(run_id: str) -> None:
+    """Fire-and-forget callback delivery from sync code paths."""
+    asyncio.create_task(_deliver_callbacks(run_id))
+
+
 async def _deliver_callbacks(run_id: str) -> None:
     async with async_session_factory() as session:
         run_result = await session.execute(select(Run).where(Run.id == run_id))

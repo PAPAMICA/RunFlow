@@ -10,7 +10,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from runflow_api.config import get_settings
 from runflow_api.core.result_parser import ResultParseError, parse_result
 from runflow_api.core.secret_redaction import SecretRedactor
 from runflow_api.deps import get_worker
@@ -24,14 +23,12 @@ from runflow_api.schemas import (
     WorkerResultRequest,
     WorkerRunPayload,
 )
-from runflow_api.services.job_files import JobFileStorage
+from runflow_api.services.credentials import resolve_credentials_for_run
+from runflow_api.services.git_auth import resolve_git_config_auth
 from runflow_api.services.logs import append_logs
 from runflow_api.services.queue import claim_next_run, transition_run
-from runflow_api.utils import generate_worker_token, hash_registration_token, utcnow
-from runflow_api.services.credentials import resolve_credentials_for_run
-from runflow_api.services.git_sync import sync_git_job
-from runflow_api.services.git_auth import resolve_git_config_auth
 from runflow_api.services.secrets import resolve_secrets_for_run
+from runflow_api.utils import generate_worker_token, hash_registration_token, utcnow
 from runflow_shared import RunStatus, SourceType, WorkerStatus
 
 router = APIRouter(prefix="/worker", tags=["worker"])
@@ -100,24 +97,24 @@ async def worker_claim(
     )
     job = result.scalar_one()
 
-    settings = get_settings()
-    workspace = Path(settings.runs_dir) / run.id / "workspace"
-    workspace.mkdir(parents=True, exist_ok=True)
-    input_dir = workspace.parent / "input"
-    output_dir = workspace.parent / "output"
-    input_dir.mkdir(parents=True, exist_ok=True)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    worker_runs_root = Path("/worker-data/runs")
+    run.workspace_path = str(worker_runs_root / run.id)
+    session.add(run)
+    await session.flush()
 
-    storage = JobFileStorage()
-    job_files_path = storage.job_root(job.id)
-
+    git_cfg = None
     if job.source_type == SourceType.GIT and job.git_config:
         git_cfg = await resolve_git_config_auth(session, job.organization_id, dict(job.git_config))
-        sync_git_job(git_cfg, job_files_path)
-        if job.files:
-            storage.sync_overlay_to(job.id, job.files, job_files_path)
-    else:
-        storage.sync_to_disk(job.id, job.files)
+
+    overlay_files = [
+        {"path": f.path, "content": f.content}
+        for f in job.files
+        if not f.is_directory and f.content is not None
+    ]
+    internal_files = [
+        {"path": f.path, "content": f.content, "is_directory": f.is_directory}
+        for f in job.files
+    ] if job.source_type == SourceType.INTERNAL else []
 
     secrets = await resolve_secrets_for_run(
         session, job.organization_id,
@@ -125,11 +122,6 @@ async def worker_claim(
         secret_refs=job.secret_refs,
     )
     credentials = await resolve_credentials_for_run(session, job.credential_refs)
-
-    run.workspace_path = str(workspace)
-    session.add(run)
-    await session.flush()
-
     job_payload = {
         "id": job.id,
         "slug": job.slug,
@@ -141,7 +133,9 @@ async def worker_claim(
         "network_mode": job.network_mode,
         "memory_limit_mb": job.memory_limit_mb,
         "cpu_limit": job.cpu_limit,
-        "job_files_path": str(job_files_path),
+        "git_config": git_cfg,
+        "overlay_files": overlay_files,
+        "internal_files": internal_files,
         "ansible_config": job.ansible_config,
         "secrets": secrets,
         "credentials": credentials,
@@ -151,7 +145,7 @@ async def worker_claim(
         run_id=run.id,
         job=job_payload,
         arguments=run.arguments or {},
-        workspace_path=str(workspace.parent),
+        workspace_path=run.workspace_path,
     )
 
 

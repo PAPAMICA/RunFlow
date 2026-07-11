@@ -1,6 +1,6 @@
 """Tests for git credential resolution."""
 
-from runflow_api.services.git_auth import default_git_username
+from runflow_shared.git_sync import default_git_username
 
 
 def test_github_default_user():

@@ -154,9 +154,9 @@ async def transition_run(
     await publish_run_status(run.id, run.status)
 
     if new_status in {RunStatus.SUCCESS, RunStatus.FAILED, RunStatus.TIMEOUT, RunStatus.CANCELLED}:
-        from runflow_api.services.callbacks import deliver_callbacks_for_run
+        from runflow_api.services.callbacks import schedule_callbacks_for_run
         from runflow_api.services.workflow_engine import on_run_completed
-        deliver_callbacks_for_run(run.id)
+        schedule_callbacks_for_run(run.id)
         await on_run_completed(session, run)
 
     return run
