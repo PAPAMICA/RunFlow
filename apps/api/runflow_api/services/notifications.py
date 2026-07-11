@@ -151,7 +151,7 @@ def should_notify(config: JobNotificationConfig, status: str) -> bool:
 
 def _format_duration(seconds: float | None) -> str:
     if seconds is None:
-        return "—"
+        return "-"
     if seconds < 60:
         return f"{seconds:.1f}s"
     minutes = int(seconds // 60)
@@ -216,8 +216,10 @@ def _build_context(
         elif stdout_text:
             error_detail = _tail(stdout_text)
 
-    subject_prefix = "[RunFlow] Test" if test else "[RunFlow]"
-    subject = f"{subject_prefix} {meta['label']} — {job.name}"
+    if test:
+        subject = f"[RunFlow] 🔔 Test {job.name}"
+    else:
+        subject = f"[RunFlow] {meta['emoji']} {job.name}"
 
     return {
         "subject": subject,
@@ -232,7 +234,7 @@ def _build_context(
         "error": error_detail,
         "run_url": run_url,
         "job_name": job.name,
-        "pushover_title": f"{meta['emoji']} {job.name}" if not test else f"🔔 Test — {job.name}",
+        "pushover_title": f"{meta['emoji']} {job.name}" if not test else f"🔔 Test {job.name}",
         "pushover_message": _build_pushover_plain(
             job, run, test=test, output=output, error=error_detail
         ),
@@ -253,7 +255,7 @@ def _build_pushover_plain(
     lines = [
         f"Job : {job.name} ({job.slug})",
         f"Statut : {status}",
-        f"Run : {run.id if run else '—'}",
+        f"Run : {run.id if run else '-'}",
     ]
     if run and run.duration_seconds is not None:
         lines.append(f"Durée : {_format_duration(run.duration_seconds)}")
