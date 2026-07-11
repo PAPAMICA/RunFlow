@@ -6,8 +6,10 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from runflow_api import __version__
 from runflow_api.api import (
@@ -72,7 +74,30 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=["*"],
     )
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_exception_handler(request: Request, exc: RequestValidationError):
+        origin = request.headers.get("origin")
+        headers: dict[str, str] = {}
+        if origin and origin in settings.cors_origin_list:
+            headers["Access-Control-Allow-Origin"] = origin
+            headers["Access-Control-Allow-Credentials"] = "true"
+        return JSONResponse(
+            status_code=422,
+            content={"detail": exc.errors()},
+            headers=headers,
+        )
+
+    @app.middleware("http")
+    async def ensure_cors_headers(request: Request, call_next):
+        response = await call_next(request)
+        origin = request.headers.get("origin")
+        if origin and origin in settings.cors_origin_list:
+            response.headers.setdefault("Access-Control-Allow-Origin", origin)
+            response.headers.setdefault("Access-Control-Allow-Credentials", "true")
+        return response
 
     app.include_router(health.router)
     app.include_router(metrics.router)
