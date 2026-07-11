@@ -1,0 +1,52 @@
+"""Tests for parameter validation."""
+
+import pytest
+
+from runflow_api.core.parameter_validation import ParameterValidationError, validate_job_arguments
+from runflow_api.models import JobParameter
+from runflow_shared import ParameterType
+
+
+def _param(name: str, ptype: str, required: bool = False, options: list | None = None, default=None):
+    return JobParameter(
+        id="01TEST",
+        job_id="01JOB",
+        name=name,
+        param_type=ptype,
+        required=required,
+        options=options,
+        default_value=default,
+        position=0,
+    )
+
+
+def test_validate_string_required():
+    params = [_param("domain", ParameterType.STRING, required=True)]
+    with pytest.raises(ParameterValidationError) as exc:
+        validate_job_arguments(params, {})
+    assert "domain" in exc.value.errors
+
+
+def test_validate_string_ok():
+    params = [_param("domain", ParameterType.STRING, required=True)]
+    result = validate_job_arguments(params, {"domain": "example.com"})
+    assert result["domain"] == "example.com"
+
+
+def test_validate_select_invalid():
+    params = [_param("env", ParameterType.SELECT, options=["prod", "dev"])]
+    with pytest.raises(ParameterValidationError):
+        validate_job_arguments(params, {"env": "staging"})
+
+
+def test_validate_boolean():
+    params = [_param("force", ParameterType.BOOLEAN, default=False)]
+    result = validate_job_arguments(params, {"force": "true"})
+    assert result["force"] is True
+
+
+def test_unknown_parameter():
+    params = [_param("domain", ParameterType.STRING)]
+    with pytest.raises(ParameterValidationError) as exc:
+        validate_job_arguments(params, {"domain": "x", "extra": "y"})
+    assert "extra" in exc.value.errors

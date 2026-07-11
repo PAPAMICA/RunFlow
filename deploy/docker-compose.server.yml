@@ -1,0 +1,112 @@
+# Déploiement RunFlow — stack serveur (API + Web + Postgres + Valkey)
+#
+# Prérequis :
+#   - Réseau Docker externe Traefik : docker network create proxy
+#   - DNS pointant vers le serveur (RUNFLOW_WEB_HOST, RUNFLOW_API_HOST)
+#
+# Usage (depuis la racine du dépôt) :
+#   cp deploy/.env.server.example .env
+#   # éditer .env (domaines, secrets, mots de passe)
+#   mkdir -p data/postgres data/runflow
+#   docker compose -f deploy/docker-compose.server.yml up -d --build
+#   docker compose -f deploy/docker-compose.server.yml exec api runflow create-admin --email admin@runflow.local
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: runflow_postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-runflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-runflow}
+    volumes:
+      - ../data/postgres:/var/lib/postgresql/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-runflow}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    container_name: runflow_valkey
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    image: runflow/api:0.1.0
+    container_name: runflow_api
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-runflow}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-runflow}
+      VALKEY_URL: redis://valkey:6379/0
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      RUNFLOW_MASTER_KEY: ${RUNFLOW_MASTER_KEY:?RUNFLOW_MASTER_KEY is required}
+      CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS is required}
+      DATA_DIR: /data
+      JOBS_DIR: /data/jobs
+      RUNS_DIR: /data/runs
+    volumes:
+      - ../data/runflow:/data
+    networks:
+      - internal
+      - proxy
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=${TRAEFIK_NETWORK:-proxy}"
+      - "traefik.http.routers.runflow_api-secure.rule=Host(`${RUNFLOW_API_HOST:?RUNFLOW_API_HOST is required}`)"
+      - "traefik.http.routers.runflow_api-secure.tls=true"
+      - "traefik.http.routers.runflow_api-secure.tls.certresolver=${TRAEFIK_CERT_RESOLVER:-http}"
+      - "traefik.http.services.runflow_api.loadbalancer.server.port=8000"
+
+  web:
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?NEXT_PUBLIC_API_URL is required}
+    image: runflow/web:0.1.0
+    container_name: runflow_web
+    networks:
+      - internal
+      - proxy
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=${TRAEFIK_NETWORK:-proxy}"
+      - "traefik.http.routers.runflow_web-secure.rule=Host(`${RUNFLOW_WEB_HOST:?RUNFLOW_WEB_HOST is required}`)"
+      - "traefik.http.routers.runflow_web-secure.tls=true"
+      - "traefik.http.routers.runflow_web-secure.tls.certresolver=${TRAEFIK_CERT_RESOLVER:-http}"
+      - "traefik.http.services.runflow_web.loadbalancer.server.port=3000"
+
+networks:
+  internal:
+    driver: bridge
+  proxy:
+    external: true
+    name: ${TRAEFIK_NETWORK:-proxy}

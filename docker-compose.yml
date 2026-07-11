@@ -1,0 +1,90 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: runflow_postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-runflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-runflow}
+      POSTGRES_DB: ${POSTGRES_DB:-runflow}
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-runflow}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "5432:5432"
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    container_name: runflow_valkey
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "6379:6379"
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: runflow_api
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-runflow}:${POSTGRES_PASSWORD:-runflow}@postgres:5432/${POSTGRES_DB:-runflow}
+      VALKEY_URL: redis://valkey:6379/0
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      RUNFLOW_MASTER_KEY: ${RUNFLOW_MASTER_KEY:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      DATA_DIR: /data
+      JOBS_DIR: /data/jobs
+      RUNS_DIR: /data/runs
+    volumes:
+      - ./data/runflow:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    container_name: runflow_worker
+    environment:
+      RUNFLOW_API_URL: http://api:8000
+      RUNFLOW_WORKER_TOKEN: ${RUNFLOW_WORKER_TOKEN:-}
+      DOCKER_ENABLED: "true"
+      PYTHON_RUNNER_IMAGE: ${PYTHON_RUNNER_IMAGE:-runflow/runner-python:0.1.0}
+      BASH_RUNNER_IMAGE: ${BASH_RUNNER_IMAGE:-runflow/runner-bash:0.1.0}
+    volumes:
+      - ./data/worker:/worker-data
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    container_name: runflow_web
+    depends_on:
+      - api
+    ports:
+      - "3000:3000"
+    restart: unless-stopped

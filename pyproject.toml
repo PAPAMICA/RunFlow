@@ -1,0 +1,30 @@
+[project]
+name = "runflow"
+version = "0.2.0"
+description = "RunFlow - API-first job automation platform"
+readme = "README.md"
+requires-python = ">=3.13"
+
+[tool.uv.workspace]
+members = [
+    "apps/api",
+    "apps/worker",
+    "packages/python-sdk",
+    "packages/runflow-shared",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "httpx>=0.28",
+    "ruff>=0.8",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["apps/api/tests", "apps/worker/tests", "packages/python-sdk/tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"

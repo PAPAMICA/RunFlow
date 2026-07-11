@@ -1,0 +1,1160 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RunFlow — Guide de mise en place et d'utilisation</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --bg-card: #171b26;
+      --bg-code: #1e2433;
+      --border: #2a3142;
+      --text: #e8ecf4;
+      --text-muted: #9aa4b8;
+      --accent: #5b8def;
+      --accent-soft: rgba(91, 141, 239, 0.12);
+      --success: #3ecf8e;
+      --warning: #f5a623;
+      --danger: #ef5f5f;
+      --sidebar-w: 280px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.65;
+      font-size: 15px;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: var(--sidebar-w) 1fr;
+      min-height: 100vh;
+    }
+
+    aside {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      border-right: 1px solid var(--border);
+      background: #12151d;
+      padding: 1.5rem 0;
+    }
+
+    .brand {
+      padding: 0 1.25rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 1rem;
+    }
+
+    .brand h1 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .brand p {
+      color: var(--text-muted);
+      font-size: 0.82rem;
+      margin-top: 0.25rem;
+    }
+
+    nav a {
+      display: block;
+      padding: 0.45rem 1.25rem;
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.88rem;
+      border-left: 3px solid transparent;
+      transition: color 0.15s, background 0.15s;
+    }
+
+    nav a:hover { color: var(--text); background: var(--accent-soft); }
+    nav a.active { color: var(--accent); border-left-color: var(--accent); background: var(--accent-soft); }
+
+    nav .group {
+      padding: 0.75rem 1.25rem 0.35rem;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #6b7589;
+      font-weight: 600;
+    }
+
+    main {
+      padding: 2.5rem 3rem 4rem;
+      max-width: 920px;
+    }
+
+    section { margin-bottom: 3.5rem; scroll-margin-top: 1.5rem; }
+
+    h2 {
+      font-size: 1.65rem;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      margin-bottom: 0.75rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    h3 {
+      font-size: 1.15rem;
+      font-weight: 600;
+      margin: 1.75rem 0 0.6rem;
+      color: #d4daf0;
+    }
+
+    h4 {
+      font-size: 0.95rem;
+      font-weight: 600;
+      margin: 1.25rem 0 0.4rem;
+      color: var(--text-muted);
+    }
+
+    p { margin-bottom: 0.85rem; }
+
+    ul, ol { margin: 0.5rem 0 1rem 1.25rem; }
+    li { margin-bottom: 0.35rem; }
+
+    a { color: var(--accent); }
+
+    .lead {
+      font-size: 1.05rem;
+      color: var(--text-muted);
+      margin-bottom: 1.5rem;
+    }
+
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.25rem 1.5rem;
+      margin: 1rem 0;
+    }
+
+    .card h3 { margin-top: 0; }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin: 1rem 0;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 0.15rem 0.55rem;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      background: var(--accent-soft);
+      color: var(--accent);
+      margin-right: 0.35rem;
+    }
+
+    .badge.green { background: rgba(62, 207, 142, 0.15); color: var(--success); }
+    .badge.orange { background: rgba(245, 166, 35, 0.15); color: var(--warning); }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1rem 0;
+      font-size: 0.88rem;
+    }
+
+    th, td {
+      text-align: left;
+      padding: 0.6rem 0.75rem;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+
+    th {
+      background: var(--bg-card);
+      color: var(--text-muted);
+      font-weight: 600;
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    code {
+      font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+      font-size: 0.84em;
+      background: var(--bg-code);
+      padding: 0.15rem 0.4rem;
+      border-radius: 4px;
+      color: #c5d4f0;
+    }
+
+    pre {
+      background: var(--bg-code);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem 1.15rem;
+      overflow-x: auto;
+      margin: 0.75rem 0 1.25rem;
+      font-size: 0.82rem;
+      line-height: 1.55;
+    }
+
+    pre code {
+      background: none;
+      padding: 0;
+      color: #d8e2f8;
+    }
+
+    .flow {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.5rem;
+      margin: 1.25rem 0;
+      font-size: 0.88rem;
+    }
+
+    .flow span {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      padding: 0.4rem 0.75rem;
+      border-radius: 6px;
+    }
+
+    .flow .arrow { color: var(--text-muted); border: none; background: none; padding: 0; }
+
+    .checklist { list-style: none; margin-left: 0; }
+    .checklist li {
+      padding: 0.45rem 0 0.45rem 1.75rem;
+      position: relative;
+      border-bottom: 1px solid var(--border);
+    }
+    .checklist li::before {
+      content: "☐";
+      position: absolute;
+      left: 0;
+      color: var(--accent);
+    }
+
+    .alert {
+      border-radius: 8px;
+      padding: 0.85rem 1rem;
+      margin: 1rem 0;
+      border-left: 4px solid;
+      font-size: 0.9rem;
+    }
+
+    .alert.info { background: var(--accent-soft); border-color: var(--accent); }
+    .alert.warn { background: rgba(245, 166, 35, 0.1); border-color: var(--warning); }
+    .alert.danger { background: rgba(239, 95, 95, 0.1); border-color: var(--danger); }
+
+    .diagram {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.5rem;
+      margin: 1rem 0;
+      font-family: monospace;
+      font-size: 0.8rem;
+      line-height: 1.5;
+      white-space: pre;
+      overflow-x: auto;
+      color: var(--text-muted);
+    }
+
+    .menu-toggle { display: none; }
+
+    @media (max-width: 900px) {
+      .layout { grid-template-columns: 1fr; }
+      aside {
+        position: fixed;
+        left: -100%;
+        z-index: 100;
+        width: var(--sidebar-w);
+        transition: left 0.25s;
+      }
+      aside.open { left: 0; }
+      main { padding: 1.5rem; }
+      .grid-2 { grid-template-columns: 1fr; }
+      .menu-toggle {
+        display: block;
+        position: fixed;
+        top: 1rem;
+        right: 1rem;
+        z-index: 101;
+        background: var(--accent);
+        color: white;
+        border: none;
+        padding: 0.5rem 0.85rem;
+        border-radius: 6px;
+        cursor: pointer;
+        font-weight: 600;
+      }
+    }
+  </style>
+</head>
+<body>
+  <button class="menu-toggle" onclick="document.querySelector('aside').classList.toggle('open')">Menu</button>
+
+  <div class="layout">
+    <aside>
+      <div class="brand">
+        <h1>RunFlow</h1>
+        <p>Guide complet — v0.1.0</p>
+      </div>
+      <nav id="nav">
+        <div class="group">Introduction</div>
+        <a href="#overview">Vue d'ensemble</a>
+        <a href="#architecture">Architecture</a>
+        <a href="#prerequisites">Prérequis</a>
+
+        <div class="group">Installation</div>
+        <a href="#install-local">Développement local</a>
+        <a href="#install-server">Serveur (Traefik)</a>
+        <a href="#install-agents">Agents workers</a>
+        <a href="#config">Configuration (.env)</a>
+        <a href="#first-run">Premier démarrage</a>
+
+        <div class="group">Utilisation</div>
+        <a href="#ui">Interface Web</a>
+        <a href="#jobs">Jobs</a>
+        <a href="#runs">Exécutions (Runs)</a>
+        <a href="#sdk">SDK Python</a>
+        <a href="#triggers">Triggers</a>
+        <a href="#workflows">Workflows</a>
+        <a href="#workers">Workers &amp; labels</a>
+        <a href="#secrets">Secrets &amp; credentials</a>
+        <a href="#ai">Assistant IA</a>
+        <a href="#api">API REST</a>
+
+        <div class="group">Référence</div>
+        <a href="#data">Données &amp; fichiers</a>
+        <a href="#security">Sécurité</a>
+        <a href="#troubleshooting">Dépannage</a>
+        <a href="#commands">Commandes utiles</a>
+      </nav>
+    </aside>
+
+    <main>
+      <!-- OVERVIEW -->
+      <section id="overview">
+        <h2>Vue d'ensemble</h2>
+        <p class="lead">
+          RunFlow est une plateforme self-hosted d'automatisation et d'exécution de jobs orientée API.
+          Elle orchestre le cycle complet : déclenchement, file d'attente, exécution distribuée et collecte des résultats.
+        </p>
+
+        <div class="flow">
+          <span>Trigger</span><span class="arrow">→</span>
+          <span>Job</span><span class="arrow">→</span>
+          <span>Queue</span><span class="arrow">→</span>
+          <span>Worker</span><span class="arrow">→</span>
+          <span>Runner Docker</span><span class="arrow">→</span>
+          <span>Résultat</span>
+        </div>
+
+        <div class="grid-2">
+          <div class="card">
+            <h3>Stack technique</h3>
+            <ul>
+              <li><strong>API</strong> — Python 3.13, FastAPI, PostgreSQL 17, Valkey</li>
+              <li><strong>Worker</strong> — Python asyncio, Docker Engine API</li>
+              <li><strong>Web</strong> — Next.js, Monaco Editor</li>
+              <li><strong>SDK</strong> — <code>from runflow import args, result</code></li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3>Modes de déploiement</h3>
+            <ul>
+              <li><span class="badge green">Local</span> <code>docker-compose.yml</code> — tout-en-un</li>
+              <li><span class="badge">Production</span> <code>deploy/docker-compose.server.yml</code> — serveur Traefik</li>
+              <li><span class="badge orange">Agents</span> <code>deploy/docker-compose.agents.yml</code> — workers distants</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="alert info">
+          <strong>Ouvrir ce guide :</strong> double-cliquez sur <code>docs/html/index.html</code> dans votre navigateur,
+          ou servez-le via un serveur web statique. Aucune connexion Internet requise.
+        </div>
+      </section>
+
+      <!-- ARCHITECTURE -->
+      <section id="architecture">
+        <h2>Architecture</h2>
+
+        <div class="diagram">┌─────────────────────────────────────────────────────────────┐
+│                     SERVEUR (Traefik / proxy)                │
+│  ┌──────────┐   ┌──────────┐   ┌──────────┐   ┌─────────┐ │
+│  │   Web    │   │   API    │   │ Postgres │   │ Valkey  │ │
+│  │ Next.js  │──▶│ FastAPI  │──▶│   (DB)   │   │ (queue) │ │
+│  │  :3000   │   │  :8000   │   └──────────┘   └─────────┘ │
+│  └──────────┘   └────┬─────┘                                │
+└──────────────────────┼────────────────────────────────────────┘
+                       │ HTTPS (long polling)
+         ┌─────────────┼─────────────┐
+         ▼             ▼             ▼
+   ┌──────────┐  ┌──────────┐  ┌──────────┐
+   │ Agent 1  │  │ Agent 2  │  │ Agent N  │
+   │  Worker  │  │  Worker  │  │  Worker  │
+   │ Docker   │  │ Docker   │  │ Docker   │
+   └──────────┘  └──────────┘  └──────────┘</div>
+
+        <h3>Principes clés</h3>
+        <ul>
+          <li><strong>Pull-based</strong> — les workers demandent les runs (long polling), le serveur ne les contacte jamais.</li>
+          <li><strong>Queue Postgres</strong> — assignation atomique via <code>FOR UPDATE SKIP LOCKED</code>.</li>
+          <li><strong>Isolation Docker</strong> — chaque job s'exécute dans un conteneur éphémère sans accès au socket Docker.</li>
+          <li><strong>Bind mounts</strong> — toutes les données persistent sur l'hôte (<code>data/</code>), pas de volumes Docker nommés.</li>
+        </ul>
+      </section>
+
+      <!-- PREREQUISITES -->
+      <section id="prerequisites">
+        <h2>Prérequis</h2>
+
+        <h3>Serveur principal</h3>
+        <table>
+          <thead><tr><th>Composant</th><th>Version minimale</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td>Docker Engine</td><td>24+</td><td>Avec Docker Compose v2</td></tr>
+            <tr><td>Traefik</td><td>2.x / 3.x</td><td>Réseau Docker externe <code>proxy</code></td></tr>
+            <tr><td>DNS</td><td>—</td><td>2 enregistrements A : web + API</td></tr>
+            <tr><td>Git</td><td>—</td><td>Clone du dépôt RunFlow</td></tr>
+          </tbody>
+        </table>
+
+        <h3>Machine agent (worker)</h3>
+        <table>
+          <thead><tr><th>Composant</th><th>Requis</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td>Docker Engine</td><td>Oui</td><td>Accès à <code>/var/run/docker.sock</code></td></tr>
+            <tr><td>Connectivité HTTPS</td><td>Oui</td><td>Vers l'URL publique de l'API</td></tr>
+            <tr><td>Images runner</td><td>Oui</td><td>Construites via <code>deploy/build-runners.sh</code></td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- INSTALL LOCAL -->
+      <section id="install-local">
+        <h2>Installation — développement local</h2>
+        <p>Pour tester rapidement sur votre machine avec tous les services sur un seul hôte.</p>
+
+        <h3>Étapes</h3>
+        <pre><code># 1. Cloner et configurer
+git clone &lt;repo-url&gt; RunFlow &amp;&amp; cd RunFlow
+cp .env.example .env
+
+# 2. Lancer (crée data/ et build les runners)
+./scripts/setup.sh
+
+# 3. Créer l'administrateur
+docker compose exec api runflow create-admin --email admin@runflow.local
+
+# 4. (Optionnel) Job de démonstration
+docker compose exec api runflow-seed seed-demo-job
+
+# 5. Accéder à l'interface
+open http://localhost:3000   # Web
+open http://localhost:8000/docs  # API Swagger</code></pre>
+
+        <h3>Services exposés (local)</h3>
+        <table>
+          <thead><tr><th>Service</th><th>Port</th><th>URL</th></tr></thead>
+          <tbody>
+            <tr><td>Web</td><td>3000</td><td><code>http://localhost:3000</code></td></tr>
+            <tr><td>API</td><td>8000</td><td><code>http://localhost:8000</code></td></tr>
+            <tr><td>PostgreSQL</td><td>5432</td><td>Interne (+ exposé en local)</td></tr>
+            <tr><td>Valkey</td><td>6379</td><td>Interne (+ exposé en local)</td></tr>
+          </tbody>
+        </table>
+
+        <h3>Données locales (bind mounts)</h3>
+        <pre><code>data/
+├── postgres/     # Base PostgreSQL
+├── runflow/      # Fichiers jobs + runs (côté API)
+└── worker/       # Cache pip worker</code></pre>
+      </section>
+
+      <!-- INSTALL SERVER -->
+      <section id="install-server">
+        <h2>Installation — serveur production (Traefik)</h2>
+        <p>Stack serveur : API + Web + Postgres + Valkey. Pas de worker sur ce serveur.</p>
+
+        <h3>Checklist de mise en place</h3>
+        <ol class="checklist">
+          <li>Créer le réseau Traefik : <code>docker network create proxy</code></li>
+          <li>Configurer les DNS (A records) vers le serveur</li>
+          <li>Copier et éditer le fichier <code>.env</code></li>
+          <li>Créer les répertoires de données</li>
+          <li>Builder et démarrer la stack</li>
+          <li>Créer le compte administrateur</li>
+          <li>Vérifier l'accès HTTPS web + API</li>
+        </ol>
+
+        <h3>Commandes</h3>
+        <pre><code># Depuis la racine du dépôt
+cp deploy/.env.server.example .env
+
+# Éditer .env — exemple :
+#   RUNFLOW_WEB_HOST=runflow.mondomaine.com
+#   RUNFLOW_API_HOST=api.runflow.mondomaine.com
+#   CORS_ORIGINS=https://runflow.mondomaine.com
+#   NEXT_PUBLIC_API_URL=https://api.runflow.mondomaine.com
+#   JWT_SECRET=&lt;secret-aléatoire-long&gt;
+#   RUNFLOW_MASTER_KEY=&lt;clé-32-octets-minimum&gt;
+#   POSTGRES_PASSWORD=&lt;mot-de-passe-fort&gt;
+
+mkdir -p data/postgres data/runflow
+
+docker compose -f deploy/docker-compose.server.yml up -d --build
+
+# Créer l'admin (mot de passe demandé interactivement)
+docker compose -f deploy/docker-compose.server.yml exec api \
+  runflow create-admin --email admin@votredomaine.com</code></pre>
+
+        <h3>Labels Traefik configurés</h3>
+        <table>
+          <thead><tr><th>Service</th><th>Route</th><th>Port interne</th></tr></thead>
+          <tbody>
+            <tr><td>Web</td><td><code>Host(`RUNFLOW_WEB_HOST`)</code></td><td>3000</td></tr>
+            <tr><td>API</td><td><code>Host(`RUNFLOW_API_HOST`)</code></td><td>8000</td></tr>
+          </tbody>
+        </table>
+
+        <div class="alert warn">
+          <strong>Important — rebuild web :</strong> <code>NEXT_PUBLIC_API_URL</code> est injectée au <em>build</em> de l'image web.
+          Si vous changez le domaine API, relancez <code>docker compose -f deploy/docker-compose.server.yml up -d --build web</code>.
+        </div>
+
+        <h3>Récupérer l'ID organisation (pour les workers)</h3>
+        <pre><code># Se connecter à Postgres
+docker compose -f deploy/docker-compose.server.yml exec postgres \
+  psql -U runflow -d runflow -c "SELECT id, name, slug FROM organizations;"</code></pre>
+      </section>
+
+      <!-- INSTALL AGENTS -->
+      <section id="install-agents">
+        <h2>Installation — agents workers</h2>
+        <p>Déployez un agent sur chaque machine capable d'exécuter Docker. Les agents se connectent à l'API publique en HTTPS.</p>
+
+        <h3>Checklist par agent</h3>
+        <ol class="checklist">
+          <li>Cloner le dépôt (ou copier les fichiers deploy)</li>
+          <li>Configurer <code>.env</code> agent</li>
+          <li>Construire les images runner</li>
+          <li>Créer un token d'inscription côté serveur</li>
+          <li>Enregistrer l'agent (une seule fois)</li>
+          <li>Démarrer le worker</li>
+          <li>Vérifier le statut « online » dans l'UI Workers</li>
+        </ol>
+
+        <h3>Étape 1 — Configuration agent</h3>
+        <pre><code>cp deploy/.env.agents.example .env
+
+# Éditer :
+#   RUNFLOW_API_URL=https://api.runflow.mondomaine.com
+#   WORKER_NAME=geneva-agent1</code></pre>
+
+        <h3>Étape 2 — Images runner</h3>
+        <pre><code>./deploy/build-runners.sh
+# Construit :
+#   runflow/runner-python:0.1.0
+#   runflow/runner-bash:0.1.0
+#   runflow/runner-ansible:0.1.0</code></pre>
+
+        <h3>Étape 3 — Token d'inscription (côté serveur)</h3>
+        <pre><code>docker compose -f deploy/docker-compose.server.yml exec api \
+  runflow worker-create-registration-token \
+  --name geneva-agent1 --org-id &lt;ORG_ID&gt;
+
+# Affiche : rf_reg_... (affiché UNE SEULE FOIS)</code></pre>
+
+        <h3>Étape 4 — Enregistrement (côté agent)</h3>
+        <pre><code>mkdir -p data/worker-geneva-agent1
+
+REGISTRATION_TOKEN=rf_reg_VOTRE_TOKEN \
+  docker compose -f deploy/docker-compose.agents.yml --profile register run --rm register
+
+# Le token permanent rf_wkr_... est sauvé dans :
+#   data/worker-geneva-agent1/worker.env</code></pre>
+
+        <h3>Étape 5 — Démarrage</h3>
+        <pre><code>docker compose -f deploy/docker-compose.agents.yml up -d worker
+
+# Vérifier les logs
+docker compose -f deploy/docker-compose.agents.yml logs -f worker</code></pre>
+
+        <h3>Données agent</h3>
+        <pre><code>data/
+└── worker-geneva-agent1/
+    ├── worker.env          # Token permanent (rf_wkr_...)
+    └── pip-cache/          # Cache pip persistant</code></pre>
+      </section>
+
+      <!-- CONFIG -->
+      <section id="config">
+        <h2>Configuration (.env)</h2>
+
+        <h3>Variables serveur</h3>
+        <table>
+          <thead><tr><th>Variable</th><th>Obligatoire</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>RUNFLOW_WEB_HOST</code></td><td>Oui</td><td>Domaine de l'interface web (Traefik)</td></tr>
+            <tr><td><code>RUNFLOW_API_HOST</code></td><td>Oui</td><td>Domaine de l'API (Traefik)</td></tr>
+            <tr><td><code>NEXT_PUBLIC_API_URL</code></td><td>Oui</td><td>URL API publique (build Next.js) — ex. <code>https://api.runflow.example.com</code></td></tr>
+            <tr><td><code>CORS_ORIGINS</code></td><td>Oui</td><td>URL web autorisée — ex. <code>https://runflow.example.com</code></td></tr>
+            <tr><td><code>JWT_SECRET</code></td><td>Oui</td><td>Secret pour les tokens JWT web</td></tr>
+            <tr><td><code>RUNFLOW_MASTER_KEY</code></td><td>Oui</td><td>Clé AES-256 pour secrets/credentials/AI (32+ octets)</td></tr>
+            <tr><td><code>POSTGRES_PASSWORD</code></td><td>Oui</td><td>Mot de passe base de données</td></tr>
+            <tr><td><code>TRAEFIK_NETWORK</code></td><td>Non</td><td>Réseau Traefik (défaut : <code>proxy</code>)</td></tr>
+            <tr><td><code>TRAEFIK_CERT_RESOLVER</code></td><td>Non</td><td>Résolveur TLS Traefik (défaut : <code>http</code>)</td></tr>
+          </tbody>
+        </table>
+
+        <h3>Variables agent</h3>
+        <table>
+          <thead><tr><th>Variable</th><th>Obligatoire</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>RUNFLOW_API_URL</code></td><td>Oui</td><td>URL HTTPS de l'API</td></tr>
+            <tr><td><code>WORKER_NAME</code></td><td>Oui</td><td>Nom unique de l'agent</td></tr>
+            <tr><td><code>REGISTRATION_TOKEN</code></td><td>Inscription</td><td>Token <code>rf_reg_...</code> (usage unique)</td></tr>
+            <tr><td><code>PYTHON_RUNNER_IMAGE</code></td><td>Non</td><td>Image runner Python</td></tr>
+            <tr><td><code>BASH_RUNNER_IMAGE</code></td><td>Non</td><td>Image runner Bash</td></tr>
+            <tr><td><code>ANSIBLE_RUNNER_IMAGE</code></td><td>Non</td><td>Image runner Ansible</td></tr>
+          </tbody>
+        </table>
+
+        <div class="alert danger">
+          <strong>Générer RUNFLOW_MASTER_KEY :</strong>
+          <code>openssl rand -base64 32</code> — ne changez jamais cette clé après avoir stocké des secrets, sinon ils deviennent illisibles.
+        </div>
+      </section>
+
+      <!-- FIRST RUN -->
+      <section id="first-run">
+        <h2>Premier démarrage</h2>
+
+        <h3>1. Connexion à l'interface</h3>
+        <p>Ouvrez <code>https://&lt;RUNFLOW_WEB_HOST&gt;</code> (ou <code>http://localhost:3000</code> en local). Connectez-vous avec l'email et le mot de passe admin créés via CLI.</p>
+
+        <h3>2. Créer un job Python</h3>
+        <ol>
+          <li>Menu <strong>Jobs</strong> → <strong>Créer un job</strong></li>
+          <li>Nom : <code>Mon premier job</code>, slug : <code>mon-premier-job</code>, runner : <code>python</code></li>
+          <li>Onglet <strong>Code</strong> → créer <code>main.py</code> :</li>
+        </ol>
+        <pre><code>from runflow import args, result
+
+name = args.get("name", "monde")
+print(f"Hello, {name}!")
+result.set({"greeting": f"Hello, {name}!"})</code></pre>
+
+        <h3>3. Ajouter un paramètre</h3>
+        <p>Onglet <strong>Parameters</strong> → ajouter <code>name</code> (type string, requis).</p>
+
+        <h3>4. Lancer le job</h3>
+        <p>Onglet <strong>Run</strong> → renseigner <code>name</code> → <strong>Exécuter</strong>. Consultez le résultat JSON et les logs.</p>
+
+        <h3>5. Vérifier le worker</h3>
+        <p>Menu <strong>Workers</strong> — le worker doit apparaître en statut <span class="badge green">online</span>. Si absent, vérifiez les logs agent et le token.</p>
+      </section>
+
+      <!-- UI -->
+      <section id="ui">
+        <h2>Interface Web</h2>
+
+        <table>
+          <thead><tr><th>Page</th><th>Route</th><th>Fonction</th></tr></thead>
+          <tbody>
+            <tr><td>Dashboard</td><td><code>/dashboard</code></td><td>Statistiques, runs récents, workers en ligne</td></tr>
+            <tr><td>Jobs</td><td><code>/jobs</code></td><td>Liste et création de jobs</td></tr>
+            <tr><td>Job Detail</td><td><code>/jobs/[id]</code></td><td>Overview, Code (Monaco), Parameters, Runs, Run, Ask AI</td></tr>
+            <tr><td>Runs</td><td><code>/runs</code></td><td>Historique global des exécutions</td></tr>
+            <tr><td>Run Detail</td><td><code>/runs/[id]</code></td><td>Logs en temps réel (SSE), statut, résultat</td></tr>
+            <tr><td>Triggers</td><td><code>/triggers</code></td><td>Webhooks, schedules — création et liste</td></tr>
+            <tr><td>Secrets</td><td><code>/secrets</code></td><td>Gestion des secrets chiffrés</td></tr>
+            <tr><td>Credentials</td><td><code>/credentials</code></td><td>Credentials SSH/tokens</td></tr>
+            <tr><td>Workers</td><td><code>/workers</code></td><td>État des agents, labels, charge</td></tr>
+            <tr><td>Workflows</td><td><code>/workflows</code></td><td>Pipelines DAG — création et exécution</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- JOBS -->
+      <section id="jobs">
+        <h2>Jobs</h2>
+        <p>Un job est une unité d'exécution avec un type de runner, des fichiers source et un schéma de paramètres.</p>
+
+        <h3>Types de runners</h3>
+        <table>
+          <thead><tr><th>Runner</th><th>Usage</th></tr></thead>
+          <tbody>
+            <tr><td><code>python</code></td><td>Scripts Python avec SDK RunFlow</td></tr>
+            <tr><td><code>bash</code></td><td>Scripts shell</td></tr>
+            <tr><td><code>ansible</code></td><td>Playbooks Ansible (nécessite runner + inventaire)</td></tr>
+          </tbody>
+        </table>
+
+        <h3>Sources</h3>
+        <ul>
+          <li><strong>Internal</strong> — fichiers édités dans l'UI (Monaco), stockés sous <code>data/runflow/jobs/</code></li>
+          <li><strong>Git</strong> — synchronisation depuis un dépôt au moment du claim (Phase 3)</li>
+        </ul>
+
+        <h3>Paramètres supportés</h3>
+        <p><code>string</code>, <code>integer</code>, <code>float</code>, <code>boolean</code>, <code>select</code>, <code>multi_select</code>, <code>secret</code>, <code>json</code>, <code>file</code>, <code>date</code>, <code>datetime</code>, <code>email</code>, <code>url</code>, <code>ip</code>, <code>cidr</code>, <code>raw</code></p>
+
+        <h3>Injection des arguments (dans le conteneur)</h3>
+        <ul>
+          <li><code>RUNFLOW_ARGS_FILE=/runflow/input/args.json</code></li>
+          <li><code>RUNFLOW_ARG_&lt;NOM&gt;</code> — variables d'environnement</li>
+        </ul>
+
+        <h3>Parsers de résultat</h3>
+        <table>
+          <thead><tr><th>Parser</th><th>Comportement</th></tr></thead>
+          <tbody>
+            <tr><td><code>runflow_sdk</code></td><td>Lit le fichier résultat du SDK (recommandé)</td></tr>
+            <tr><td><code>json_stdout</code></td><td>Parse la sortie stdout comme JSON</td></tr>
+            <tr><td><code>last_json_line</code></td><td>Dernière ligne JSON de stdout</td></tr>
+            <tr><td><code>none</code></td><td>Pas de résultat structuré</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- RUNS -->
+      <section id="runs">
+        <h2>Exécutions (Runs)</h2>
+
+        <h3>Cycle de vie</h3>
+        <div class="flow">
+          <span>queued</span><span class="arrow">→</span>
+          <span>assigned</span><span class="arrow">→</span>
+          <span>preparing</span><span class="arrow">→</span>
+          <span>running</span><span class="arrow">→</span>
+          <span>success / failed / timeout / cancelled</span>
+        </div>
+
+        <h3>Lancer via API</h3>
+        <pre><code># Asynchrone (202)
+curl -X POST "https://api.example.com/api/v1/jobs/mon-job/run" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"arguments": {"name": "RunFlow"}}'
+
+# Synchrone (attend la fin)
+curl -X POST "https://api.example.com/api/v1/jobs/mon-job/run?wait=true&amp;wait_timeout=120" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"arguments": {"name": "RunFlow"}}'</code></pre>
+
+        <h3>Logs en temps réel (SSE)</h3>
+        <pre><code>curl -N "https://api.example.com/api/v1/runs/&lt;RUN_ID&gt;/logs/stream" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+      </section>
+
+      <!-- SDK -->
+      <section id="sdk">
+        <h2>SDK Python</h2>
+        <p>Le SDK est pré-installé dans l'image runner Python.</p>
+
+        <pre><code>from runflow import args, result
+
+# Lire les arguments
+domain = args["domain"]
+verbose = args.get("verbose", False)
+
+# Logique métier
+print(f"Traitement de {domain}")
+
+# Résultat structuré (JSON)
+result.set({
+    "domain": domain,
+    "status": "ok",
+    "checked_at": "2026-07-11T12:00:00Z"
+})</code></pre>
+
+        <h3>Installation locale (développement)</h3>
+        <pre><code>cd packages/python-sdk
+uv sync
+# ou : pip install -e packages/python-sdk</code></pre>
+      </section>
+
+      <!-- TRIGGERS -->
+      <section id="triggers">
+        <h2>Triggers</h2>
+
+        <table>
+          <thead><tr><th>Type</th><th>Déclenchement</th></tr></thead>
+          <tbody>
+            <tr><td><code>webhook</code></td><td>POST <code>/api/v1/hooks/{hook_token}</code></td></tr>
+            <tr><td><code>schedule</code></td><td>Expression cron dans <code>config.cron</code></td></tr>
+            <tr><td><code>email</code></td><td>Boîte IMAP + règles de matching</td></tr>
+            <tr><td><code>manual</code></td><td>UI ou API</td></tr>
+            <tr><td><code>workflow</code></td><td>Nœud de workflow parent</td></tr>
+          </tbody>
+        </table>
+
+        <h3>Webhook avec HMAC</h3>
+        <pre><code># Créer le trigger
+curl -X POST https://api.example.com/api/v1/triggers \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Deploy hook",
+    "trigger_type": "webhook",
+    "target_id": "&lt;JOB_ID&gt;",
+    "config": {"auth": "hmac", "secret": "mon-secret"}
+  }'
+
+# Déclencher (calculer HMAC-SHA256 du body)
+curl -X POST https://api.example.com/api/v1/hooks/&lt;HOOK_TOKEN&gt; \
+  -H "Content-Type: application/json" \
+  -H "X-RunFlow-Signature: sha256=&lt;HMAC&gt;" \
+  -d '{"branch": "main"}'</code></pre>
+
+        <h3>Schedule (cron)</h3>
+        <pre><code>{
+  "name": "Sauvegarde nocturne",
+  "trigger_type": "schedule",
+  "target_id": "&lt;JOB_ID&gt;",
+  "config": {
+    "cron": "0 2 * * *",
+    "timezone": "Europe/Paris"
+  }
+}</code></pre>
+
+        <p>Modes d'auth webhook : <code>none</code>, <code>bearer</code>, <code>secret_header</code>, <code>hmac</code>.</p>
+      </section>
+
+      <!-- WORKFLOWS -->
+      <section id="workflows">
+        <h2>Workflows</h2>
+        <p>Orchestration de jobs en DAG avec dépendances, conditions et mapping d'arguments Jinja2.</p>
+
+        <h3>Concepts</h3>
+        <ul>
+          <li><strong>Workflow</strong> — définition (nom, slug, politique d'échec)</li>
+          <li><strong>Node</strong> — référence un job + mapping + condition optionnelle</li>
+          <li><strong>Edge</strong> — dépendance entre nœuds</li>
+          <li><strong>WorkflowRun</strong> — instance d'exécution</li>
+        </ul>
+
+        <h3>Argument mapping (Jinja2)</h3>
+        <pre><code>{
+  "version": "{{ nodes.build.result.version }}",
+  "env": "{{ workflow.arguments.env }}"
+}</code></pre>
+
+        <h3>Lancer un workflow</h3>
+        <pre><code>curl -X POST https://api.example.com/api/v1/workflows/&lt;ID&gt;/run \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"arguments": {"env": "production"}}'</code></pre>
+
+        <h3>Politiques d'échec</h3>
+        <ul>
+          <li><code>stop</code> — arrêt au premier échec</li>
+          <li><code>continue</code> — poursuit les branches indépendantes</li>
+        </ul>
+      </section>
+
+      <!-- WORKERS -->
+      <section id="workers">
+        <h2>Workers &amp; labels</h2>
+
+        <h3>Assignation</h3>
+        <p>Au moment du <code>claim</code>, le worker ne reçoit que les runs compatibles :</p>
+        <ul>
+          <li><strong>worker_id</strong> — worker précis (option job)</li>
+          <li><strong>worker_group_id</strong> — membre d'un groupe</li>
+          <li><strong>worker_labels</strong> — labels requis (ex. <code>{"ansible": "true"}</code>)</li>
+        </ul>
+
+        <h3>Créer un worker via API</h3>
+        <pre><code>curl -X POST https://api.example.com/api/v1/workers \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "worker-paris",
+    "labels": {"docker": "true", "region": "paris"},
+    "max_concurrency": 5
+  }'
+# Retourne le token rf_wkr_... (affiché une seule fois)</code></pre>
+
+        <h3>CLI worker</h3>
+        <pre><code>runflow-worker version
+runflow-worker register --server URL --registration-token rf_reg_...
+runflow-worker start</code></pre>
+      </section>
+
+      <!-- SECRETS -->
+      <section id="secrets">
+        <h2>Secrets &amp; credentials</h2>
+
+        <h3>Secrets</h3>
+        <p>Valeurs chiffrées AES-256-GCM. Injectées comme variables d'environnement dans les conteneurs de job. Jamais affichées en clair dans l'UI ou les logs (redaction automatique).</p>
+
+        <pre><code>curl -X POST https://api.example.com/api/v1/secrets \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "API_KEY", "value": "sk-...", "scope": "organization"}'</code></pre>
+
+        <h3>Credentials</h3>
+        <p>Clés SSH, tokens, etc. Référencez-les dans un job via <code>credential_refs</code>. Montés dans le workspace au moment de l'exécution.</p>
+
+        <div class="alert warn">
+          <code>RUNFLOW_MASTER_KEY</code> doit être identique sur toutes les instances API et sauvegardée de manière sécurisée. Sans elle, les secrets stockés sont irrécupérables.
+        </div>
+      </section>
+
+      <!-- AI -->
+      <section id="ai">
+        <h2>Assistant IA</h2>
+        <p>Disponible dans l'onglet <strong>Code</strong> d'un job (panneau Ask AI).</p>
+
+        <h3>Configuration</h3>
+        <ol>
+          <li>Créer un provider AI via API (<code>POST /api/v1/ai/providers</code>)</li>
+          <li>Types supportés : OpenAI-compatible, Ollama</li>
+          <li>Définir <code>RUNFLOW_MASTER_KEY</code> pour chiffrer les clés API des providers</li>
+        </ol>
+
+        <h3>Flux</h3>
+        <ol>
+          <li>Sélectionner un provider et décrire la modification souhaitée</li>
+          <li>L'IA propose des changements multi-fichiers (diff)</li>
+          <li>Cliquer <strong>Apply</strong> pour écrire les fichiers</li>
+        </ol>
+      </section>
+
+      <!-- API -->
+      <section id="api">
+        <h2>API REST</h2>
+        <p>Base URL : <code>/api/v1</code> — documentation interactive : <code>/docs</code> (Swagger).</p>
+
+        <h3>Authentification</h3>
+        <table>
+          <thead><tr><th>Méthode</th><th>Header</th><th>Usage</th></tr></thead>
+          <tbody>
+            <tr><td>JWT Web</td><td><code>Authorization: Bearer &lt;jwt&gt;</code></td><td>Interface, scripts admin</td></tr>
+            <tr><td>API Key</td><td><code>X-API-Key: rf_live_...</code></td><td>CI/CD, intégrations</td></tr>
+            <tr><td>Worker Token</td><td><code>Authorization: Bearer rf_wkr_...</code></td><td>Agents uniquement (<code>/api/v1/worker/*</code>)</td></tr>
+          </tbody>
+        </table>
+
+        <h3>Endpoints principaux</h3>
+        <table>
+          <thead><tr><th>Méthode</th><th>Endpoint</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>POST</td><td><code>/auth/login</code></td><td>Connexion web</td></tr>
+            <tr><td>GET</td><td><code>/jobs</code></td><td>Liste des jobs</td></tr>
+            <tr><td>POST</td><td><code>/jobs</code></td><td>Créer un job</td></tr>
+            <tr><td>PUT</td><td><code>/jobs/{id}/files/{path}</code></td><td>Écrire un fichier</td></tr>
+            <tr><td>POST</td><td><code>/jobs/{slug}/run</code></td><td>Lancer un job</td></tr>
+            <tr><td>GET</td><td><code>/runs/{id}</code></td><td>Statut d'un run</td></tr>
+            <tr><td>GET</td><td><code>/runs/{id}/logs/stream</code></td><td>Logs SSE</td></tr>
+            <tr><td>GET/POST</td><td><code>/triggers</code></td><td>Triggers</td></tr>
+            <tr><td>POST</td><td><code>/hooks/{token}</code></td><td>Webhook public</td></tr>
+            <tr><td>GET/POST</td><td><code>/workflows</code></td><td>Workflows</td></tr>
+            <tr><td>GET/POST</td><td><code>/secrets</code></td><td>Secrets</td></tr>
+            <tr><td>GET/POST</td><td><code>/workers</code></td><td>Workers (admin)</td></tr>
+            <tr><td>POST</td><td><code>/ai/ask</code></td><td>Demande IA</td></tr>
+            <tr><td>GET</td><td><code>/metrics</code></td><td>Métriques Prometheus</td></tr>
+          </tbody>
+        </table>
+
+        <h3>Créer une API Key</h3>
+        <pre><code>curl -X POST https://api.example.com/api/v1/api-keys \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "ci-deploy",
+    "scopes": ["job:read", "job:run", "run:read"]
+  }'</code></pre>
+      </section>
+
+      <!-- DATA -->
+      <section id="data">
+        <h2>Données &amp; fichiers</h2>
+
+        <h3>Arborescence serveur</h3>
+        <pre><code>RunFlow/
+├── .env                          # Configuration active
+├── data/
+│   ├── postgres/                 # Données PostgreSQL
+│   └── runflow/                  # Données applicatives API
+│       ├── jobs/                 # Fichiers des jobs (par job_id)
+│       └── runs/                 # Workspaces et outputs des runs
+├── deploy/
+│   ├── docker-compose.server.yml
+│   ├── docker-compose.agents.yml
+│   ├── .env.server.example
+│   └── .env.agents.example
+└── docs/html/index.html          # Ce guide</code></pre>
+
+        <h3>Arborescence agent</h3>
+        <pre><code>RunFlow/
+├── .env
+└── data/
+    └── worker-&lt;WORKER_NAME&gt;/
+        ├── worker.env            # Credentials worker
+        └── pip-cache/            # Cache pip</code></pre>
+
+        <h3>Sauvegardes recommandées</h3>
+        <ul>
+          <li><code>data/postgres/</code> — dump régulier via <code>pg_dump</code></li>
+          <li><code>data/runflow/</code> — fichiers jobs et résultats</li>
+          <li><code>.env</code> — hors Git, sauvegardé de manière sécurisée</li>
+        </ul>
+      </section>
+
+      <!-- SECURITY -->
+      <section id="security">
+        <h2>Sécurité</h2>
+
+        <ul>
+          <li>Mots de passe : Argon2id</li>
+          <li>API Keys / Worker tokens : SHA-256, préfixe public</li>
+          <li>JWT : HS256, expiration configurable</li>
+          <li>RBAC : owner, admin, operator, viewer</li>
+          <li>Scopes API granulaires</li>
+          <li>Redaction automatique des secrets dans les logs</li>
+          <li>Anti path-traversal sur les fichiers jobs</li>
+          <li>Conteneurs de job isolés (pas de socket Docker)</li>
+          <li>Templates Jinja2 en sandbox</li>
+          <li>Chiffrement AES-256-GCM des secrets (<code>RUNFLOW_MASTER_KEY</code>)</li>
+        </ul>
+      </section>
+
+      <!-- TROUBLESHOOTING -->
+      <section id="troubleshooting">
+        <h2>Dépannage</h2>
+
+        <h3>Le worker reste offline</h3>
+        <ul>
+          <li>Vérifier <code>RUNFLOW_API_URL</code> (HTTPS accessible depuis l'agent)</li>
+          <li>Vérifier <code>data/worker-&lt;name&gt;/worker.env</code> contient un token <code>rf_wkr_...</code></li>
+          <li>Consulter les logs : <code>docker compose -f deploy/docker-compose.agents.yml logs worker</code></li>
+          <li>Vérifier que les images runner existent : <code>docker images | grep runflow</code></li>
+        </ul>
+
+        <h3>Les runs restent en queued</h3>
+        <ul>
+          <li>Aucun worker online ou labels incompatibles</li>
+          <li>Worker à capacité max (<code>max_concurrency</code>)</li>
+          <li>Vérifier l'assignation : labels du job vs labels du worker</li>
+        </ul>
+
+        <h3>Erreur CORS dans le navigateur</h3>
+        <ul>
+          <li><code>CORS_ORIGINS</code> doit correspondre exactement à l'URL web (avec <code>https://</code>)</li>
+          <li><code>NEXT_PUBLIC_API_URL</code> doit pointer vers l'URL API publique</li>
+          <li>Rebuild l'image web après modification</li>
+        </ul>
+
+        <h3>Secrets illisibles / EncryptionError</h3>
+        <ul>
+          <li><code>RUNFLOW_MASTER_KEY</code> manquante ou modifiée après stockage de secrets</li>
+          <li>La clé doit être identique à chaque redémarrage API</li>
+        </ul>
+
+        <h3>Certificat TLS Traefik</h3>
+        <ul>
+          <li>Vérifier que les DNS pointent vers le serveur</li>
+          <li>Vérifier <code>TRAEFIK_CERT_RESOLVER</code> correspond à votre config Traefik</li>
+          <li>Le conteneur doit être sur le réseau <code>proxy</code></li>
+        </ul>
+
+        <h3>Job Docker échoue immédiatement</h3>
+        <ul>
+          <li>Image runner absente sur l'agent : relancer <code>./deploy/build-runners.sh</code></li>
+          <li>Permission Docker socket : l'utilisateur du conteneur worker doit accéder au socket</li>
+          <li>Consulter les logs du run dans l'UI ou via API</li>
+        </ul>
+      </section>
+
+      <!-- COMMANDS -->
+      <section id="commands">
+        <h2>Commandes utiles</h2>
+
+        <h3>Serveur</h3>
+        <pre><code># État des services
+docker compose -f deploy/docker-compose.server.yml ps
+
+# Logs API
+docker compose -f deploy/docker-compose.server.yml logs -f api
+
+# Migrations manuelles
+docker compose -f deploy/docker-compose.server.yml exec api alembic upgrade head
+
+# Shell Postgres
+docker compose -f deploy/docker-compose.server.yml exec postgres \
+  psql -U runflow -d runflow
+
+# Rebuild après changement de domaine
+docker compose -f deploy/docker-compose.server.yml up -d --build web api</code></pre>
+
+        <h3>Agent</h3>
+        <pre><code># État
+docker compose -f deploy/docker-compose.agents.yml ps
+
+# Logs
+docker compose -f deploy/docker-compose.agents.yml logs -f worker
+
+# Redémarrer
+docker compose -f deploy/docker-compose.agents.yml restart worker</code></pre>
+
+        <h3>Développement</h3>
+        <pre><code>uv sync --all-packages
+uv run pytest -v
+cd apps/web && pnpm typecheck && pnpm build</code></pre>
+
+        <h3>CLI RunFlow</h3>
+        <pre><code>runflow version
+runflow create-admin --email admin@example.com
+runflow worker-create-registration-token --name agent1 --org-id &lt;ORG_ID&gt;
+
+runflow-worker version
+runflow-worker register --server https://api.example.com --registration-token rf_reg_...
+runflow-worker start</code></pre>
+      </section>
+
+      <footer style="margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--border); color: var(--text-muted); font-size: 0.85rem;">
+        RunFlow v0.1.0 — Documentation générée pour mise en place et utilisation.
+        Fichier : <code>docs/html/index.html</code>
+      </footer>
+    </main>
+  </div>
+
+  <script>
+    const sections = document.querySelectorAll("section[id]");
+    const navLinks = document.querySelectorAll("#nav a");
+
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          navLinks.forEach((link) => {
+            link.classList.toggle("active", link.getAttribute("href") === "#" + entry.target.id);
+          });
+        }
+      });
+    }, { rootMargin: "-20% 0px -70% 0px" });
+
+    sections.forEach((s) => observer.observe(s));
+
+    navLinks.forEach((link) => {
+      link.addEventListener("click", () => {
+        document.querySelector("aside").classList.remove("open");
+      });
+    });
+  </script>
+</body>
+</html>
