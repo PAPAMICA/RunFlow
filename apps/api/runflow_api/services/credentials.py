@@ -36,6 +36,23 @@ async def create_credential(
     return cred
 
 
+async def update_credential(
+    session: AsyncSession,
+    credential: Credential,
+    *,
+    name: str | None = None,
+    data: dict[str, Any] | None = None,
+) -> Credential:
+    if name is not None:
+        credential.name = name
+    if data is not None:
+        ct, nonce = encrypt(json.dumps(data))
+        credential.encrypted_data = ct
+        credential.nonce = nonce
+    await session.flush()
+    return credential
+
+
 async def get_credential_data(session: AsyncSession, credential_id: str) -> dict[str, Any]:
     result = await session.execute(select(Credential).where(Credential.id == credential_id))
     cred = result.scalar_one_or_none()

@@ -59,3 +59,23 @@ async def create_secret_endpoint(
     await audit(session, "secret.create", organization_id=auth.organization_id,
                 user_id=auth.user_id, resource_type="secret", resource_id=secret.id)
     return SecretResponse(id=secret.id, name=secret.name, scope=secret.scope, scope_id=secret.scope_id)
+
+
+@router.delete("/{secret_id}", status_code=204)
+async def delete_secret_endpoint(
+    secret_id: str,
+    auth: AuthContext = Depends(require_permission("admin")),
+    session: AsyncSession = Depends(get_db),
+):
+    result = await session.execute(
+        select(Secret).where(
+            Secret.id == secret_id,
+            Secret.organization_id == auth.organization_id,
+        )
+    )
+    secret = result.scalar_one_or_none()
+    if not secret:
+        raise HTTPException(status_code=404, detail="Secret not found")
+    await session.delete(secret)
+    await audit(session, "secret.delete", organization_id=auth.organization_id,
+                user_id=auth.user_id, resource_type="secret", resource_id=secret_id)

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Plus, Shield } from "lucide-react";
+import { Plus, Shield, Trash2 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
@@ -18,12 +18,24 @@ export default function SecretsPage() {
   const [name, setName] = useState("");
   const [value, setValue] = useState("");
   const [error, setError] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   async function refresh() {
     setSecrets(await api.getSecrets());
   }
 
   useEffect(() => { refresh().catch(console.error); }, []);
+
+  async function handleDelete(id: string) {
+    setError("");
+    try {
+      await api.deleteSecret(id);
+      setConfirmDelete(null);
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur");
+    }
+  }
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -51,6 +63,10 @@ export default function SecretsPage() {
           </Button>
         }
       />
+
+      {error && !showCreate && (
+        <p className="mb-4 text-sm text-destructive bg-destructive/10 rounded-lg px-3 py-2">{error}</p>
+      )}
 
       {showCreate && (
         <Card className="mb-6 border-primary/20">
@@ -82,10 +98,32 @@ export default function SecretsPage() {
       ) : (
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
           {secrets.map((s) => (
-            <Card key={s.id} hover>
-              <CardContent className="pt-5 flex justify-between items-center">
-                <p className="font-medium">{s.name}</p>
-                <Badge variant="muted">{s.scope}</Badge>
+            <Card key={s.id}>
+              <CardContent className="pt-5 flex justify-between items-center gap-2">
+                <div className="min-w-0">
+                  <p className="font-medium truncate">{s.name}</p>
+                  <Badge variant="muted" className="mt-1">{s.scope}</Badge>
+                </div>
+                {confirmDelete === s.id ? (
+                  <div className="flex items-center gap-1">
+                    <Button size="sm" variant="destructive" onClick={() => handleDelete(s.id)}>
+                      Oui
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => setConfirmDelete(null)}>
+                      Non
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={() => setConfirmDelete(s.id)}
+                    title="Supprimer"
+                    className="text-muted-foreground hover:text-destructive"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
               </CardContent>
             </Card>
           ))}

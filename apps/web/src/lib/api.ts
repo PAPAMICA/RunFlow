@@ -150,9 +150,18 @@ export const api = {
   getSecrets: () => request<Secret[]>("/api/v1/secrets"),
   createSecret: (data: SecretCreate) =>
     request<Secret>("/api/v1/secrets", { method: "POST", body: JSON.stringify(data) }),
+  deleteSecret: (id: string) =>
+    request<void>(`/api/v1/secrets/${id}`, { method: "DELETE" }),
   getCredentials: () => request<Credential[]>("/api/v1/credentials"),
   createCredential: (data: CredentialCreate) =>
     request<Credential>("/api/v1/credentials", { method: "POST", body: JSON.stringify(data) }),
+  updateCredential: (id: string, data: CredentialUpdate) =>
+    request<Credential>(`/api/v1/credentials/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  deleteCredential: (id: string) =>
+    request<void>(`/api/v1/credentials/${id}`, { method: "DELETE" }),
   getWorkers: () => request<WorkerInfo[]>("/api/v1/workers"),
   createWorker: (data: { name: string; labels?: Record<string, string> }) =>
     request<{ id: string; name: string; token: string }>("/api/v1/workers", {
@@ -443,6 +452,7 @@ export interface Secret { id: string; name: string; scope: string }
 export interface SecretCreate { name: string; value: string; scope?: string }
 export interface Credential { id: string; name: string; credential_type: string }
 export interface CredentialCreate { name: string; credential_type: string; data: Record<string, unknown>; project_id?: string }
+export interface CredentialUpdate { name?: string; data?: Record<string, unknown> }
 export interface WorkerInfo { id: string; name: string; status: string; labels: Record<string, string>; current_runs: number; hostname?: string; version?: string; last_seen_at?: string }
 export interface User { id: string; email: string; enabled: boolean }
 export interface Organization { id: string; name: string; slug: string }
