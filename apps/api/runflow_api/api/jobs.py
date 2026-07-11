@@ -418,6 +418,9 @@ async def update_job(
         for param in list(job.parameters):
             await session.delete(param)
         await session.flush()
+        # Drop the now-deleted instances from the loaded collection so the
+        # save-update cascade doesn't try to re-persist deleted objects.
+        session.expire(job, ["parameters"])
         for param in new_parameters:
             session.add(
                 JobParameter(
@@ -442,7 +445,6 @@ async def update_job(
     if job.source_type == "git" and job.git_config and job.entrypoint:
         job.entrypoint = _normalize_git_entrypoint(job.entrypoint, job.git_config)
 
-    session.add(job)
     await session.flush()
     await session.refresh(job, attribute_names=["parameters", "files"])
     return _job_to_response(job)

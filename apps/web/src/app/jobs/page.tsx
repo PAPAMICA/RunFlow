@@ -3,12 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Boxes, GitBranch, Plus } from "lucide-react";
+import { Boxes, GitBranch, HardDrive, Plus, SlidersHorizontal } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { DataTable, DataTableSkeleton } from "@/components/DataTable";
 import { EmptyState } from "@/components/EmptyState";
 import { FavoriteButton } from "@/components/FavoriteButton";
-import { JobDeployForm } from "@/components/JobDeployForm";
 import { PageHeader } from "@/components/PageHeader";
 import { SearchInput } from "@/components/SearchInput";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -21,7 +20,6 @@ export default function JobsPage() {
   const router = useRouter();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
-  const [showDeploy, setShowDeploy] = useState(false);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -35,6 +33,11 @@ export default function JobsPage() {
       .finally(() => setLoading(false));
   }, []);
 
+  const projectName = useMemo(() => {
+    const map = new Map(projects.map((p) => [p.id, p.name]));
+    return (id: string) => map.get(id) ?? "—";
+  }, [projects]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return jobs;
@@ -42,9 +45,10 @@ export default function JobsPage() {
       (j) =>
         j.name.toLowerCase().includes(q) ||
         j.slug.toLowerCase().includes(q) ||
-        j.entrypoint.toLowerCase().includes(q)
+        j.entrypoint.toLowerCase().includes(q) ||
+        projectName(j.project_id).toLowerCase().includes(q)
     );
-  }, [jobs, search]);
+  }, [jobs, search, projectName]);
 
   return (
     <AppShell>
@@ -52,28 +56,23 @@ export default function JobsPage() {
         title="Jobs"
         description="Scripts Python, Bash ou Ansible — internes ou depuis Git"
         action={
-          <Button onClick={() => setShowDeploy(!showDeploy)} size="lg">
+          <Button onClick={() => router.push("/jobs/new")} size="lg">
             <Plus className="h-4 w-4" />
-            Déployer un job
+            Nouveau job
           </Button>
         }
       />
 
-      {showDeploy && projects.length > 0 && (
-        <JobDeployForm
-          projects={projects}
-          onCreated={(id) => router.push(`/jobs/${id}`)}
-          onCancel={() => setShowDeploy(false)}
-        />
-      )}
-
       {!loading && jobs.length > 0 && (
-        <div className="mb-4 max-w-sm">
-          <SearchInput
-            value={search}
-            onChange={setSearch}
-            placeholder="Filtrer par nom, slug ou entrypoint…"
-          />
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="max-w-sm flex-1 min-w-[220px]">
+            <SearchInput value={search} onChange={setSearch} placeholder="Filtrer par nom, slug, projet…" />
+          </div>
+          <p className="text-sm text-muted-foreground">
+            {filtered.length === jobs.length
+              ? `${jobs.length} job${jobs.length > 1 ? "s" : ""}`
+              : `${filtered.length} / ${jobs.length}`}
+          </p>
         </div>
       )}
 
@@ -88,8 +87,8 @@ export default function JobsPage() {
           icon={Boxes}
           title="Aucun job"
           description="Déployez un job Git avec script Python, arguments et fichier .env."
-          onAction={() => setShowDeploy(true)}
-          actionLabel="Déployer un job"
+          onAction={() => router.push("/jobs/new")}
+          actionLabel="Nouveau job"
         />
       ) : filtered.length === 0 ? (
         <Card>
@@ -105,34 +104,45 @@ export default function JobsPage() {
                 <tr>
                   <th className="w-10" />
                   <th>Nom</th>
+                  <th>Projet</th>
                   <th>Source</th>
                   <th>Runner</th>
                   <th>Entrypoint</th>
+                  <th>Args</th>
                   <th>Statut</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map((j) => (
-                  <tr key={j.id}>
-                    <td>
+                  <tr
+                    key={j.id}
+                    onClick={() => router.push(`/jobs/${j.id}`)}
+                    className="cursor-pointer"
+                  >
+                    <td onClick={(e) => e.stopPropagation()}>
                       <FavoriteButton jobId={j.id} />
                     </td>
                     <td>
-                      <Link href={`/jobs/${j.id}`} className="link-primary">
+                      <Link href={`/jobs/${j.id}`} className="link-primary" onClick={(e) => e.stopPropagation()}>
                         {j.name}
                       </Link>
                       <p className="text-xs text-muted-foreground font-mono mt-0.5">{j.slug}</p>
                     </td>
+                    <td className="text-sm text-muted-foreground">{projectName(j.project_id)}</td>
                     <td>
                       <div className="flex flex-wrap gap-1.5">
                         <Badge variant={j.source_type === "git" ? "default" : "muted"}>
-                          {j.source_type === "git" ? (
-                            <span className="flex items-center gap-1">
-                              <GitBranch className="h-3 w-3" /> Git
-                            </span>
-                          ) : (
-                            "internal"
-                          )}
+                          <span className="flex items-center gap-1">
+                            {j.source_type === "git" ? (
+                              <>
+                                <GitBranch className="h-3 w-3" /> Git
+                              </>
+                            ) : (
+                              <>
+                                <HardDrive className="h-3 w-3" /> Interne
+                              </>
+                            )}
+                          </span>
                         </Badge>
                         {j.has_env_file && <Badge variant="accent">.env</Badge>}
                       </div>
@@ -144,6 +154,16 @@ export default function JobsPage() {
                     </td>
                     <td className="font-mono text-xs text-muted-foreground max-w-[200px] truncate">
                       {j.entrypoint}
+                    </td>
+                    <td className="text-muted-foreground text-xs">
+                      {j.parameters.length > 0 ? (
+                        <span className="inline-flex items-center gap-1">
+                          <SlidersHorizontal className="h-3 w-3" />
+                          {j.parameters.length}
+                        </span>
+                      ) : (
+                        "—"
+                      )}
                     </td>
                     <td>
                       <StatusBadge status={j.enabled ? "enabled" : "disabled"} />

@@ -12,6 +12,7 @@ import {
   FileCode,
   Play,
   Save,
+  Settings2,
   Timer,
   Trash2,
 } from "lucide-react";
@@ -219,6 +220,10 @@ export default function JobDetailPage() {
           <div className="flex items-center gap-2">
             <StatusBadge status={job.enabled ? "enabled" : "disabled"} />
             <FavoriteButton jobId={job.id} variant="outline" />
+            <Button onClick={() => setTab("source")} variant="outline">
+              <Settings2 className="h-4 w-4" />
+              Configurer
+            </Button>
             <Button onClick={() => setTab("run")} size="lg">
               <Play className="h-4 w-4" />
               Lancer
@@ -340,10 +345,10 @@ export default function JobDetailPage() {
       )}
 
       {tab === "source" && (
-        <div className="max-w-2xl space-y-6">
+        <div className="max-w-3xl space-y-6">
         <Card>
           <CardHeader>
-            <CardTitle>Général</CardTitle>
+            <CardTitle>Informations générales</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
