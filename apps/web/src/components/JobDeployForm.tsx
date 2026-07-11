@@ -141,7 +141,29 @@ export function JobDeployForm({ projects, onCreated, onCancel }: JobDeployFormPr
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const sourceType: SourceType = useGit ? "git" : "internal";
+  const isSsh = runnerType === "ssh";
+  const isAnsible = runnerType === "ansible";
+  const showSource = !isSsh;
+  // The playbook path lives in the Ansible config section, so the generic
+  // entrypoint field is only relevant for Python/Bash scripts.
+  const showEntrypoint = !isSsh && !isAnsible;
+  const showRunnerConfig = RUNNER_CONFIG_TYPES.has(runnerType);
+  const effectiveUseGit = showSource && useGit;
+  const sourceType: SourceType = effectiveUseGit ? "git" : "internal";
+  const entrypointLabel =
+    runnerType === "bash" ? "Script Bash (entrypoint)" : "Script Python (entrypoint)";
+
+  // Env vars run in the local runner process; for SSH the command executes on
+  // the remote host so they wouldn't apply — hide that section.
+  const showEnv = !isSsh;
+
+  // Sequential step numbers that skip hidden sections.
+  let stepCounter = 1;
+  const identityStep = stepCounter++;
+  const sourceStep = showSource ? stepCounter++ : 0;
+  const runnerConfigStep = showRunnerConfig ? stepCounter++ : 0;
+  const envStep = showEnv ? stepCounter++ : 0;
+  const argsStep = stepCounter++;
 
   useEffect(() => {
     api.getCredentials().then(setCredentials).catch(console.error);
@@ -235,7 +257,7 @@ export function JobDeployForm({ projects, onCreated, onCancel }: JobDeployFormPr
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const authError = validateGitAuth(gitAuthMode, gitToken, gitCredentialId);
-    if (useGit && authError) {
+    if (effectiveUseGit && authError) {
       setError(authError);
       return;
     }
@@ -248,8 +270,12 @@ export function JobDeployForm({ projects, onCreated, onCancel }: JobDeployFormPr
         slug,
         runner_type: runnerType,
         source_type: sourceType,
-        entrypoint,
-        git_config: useGit
+        entrypoint: isSsh
+          ? "ssh"
+          : isAnsible
+            ? ansibleConfig.playbook || "playbook.yml"
+            : entrypoint,
+        git_config: effectiveUseGit
           ? { repository_url: repoUrl, branch, path: repoPath, ...gitAuthConfig() }
           : undefined,
         ansible_config: runnerType === "ansible" ? ansibleConfig : undefined,
@@ -274,12 +300,17 @@ export function JobDeployForm({ projects, onCreated, onCancel }: JobDeployFormPr
     }
   }
 
-  const canSubmit = name.trim() && slug.trim() && projectId && entrypoint.trim() && (!useGit || repoUrl.trim());
+  const canSubmit =
+    name.trim() &&
+    slug.trim() &&
+    projectId &&
+    (!showEntrypoint || entrypoint.trim()) &&
+    (!effectiveUseGit || repoUrl.trim());
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
       {/* 01 — Identité */}
-      <SectionCard step={1} icon={SlidersHorizontal} title="Identité" description="Nom, slug d'appel et projet de rattachement">
+      <SectionCard step={identityStep} icon={SlidersHorizontal} title="Identité" description="Nom, slug d'appel et projet de rattachement">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <div className="space-y-2">
             <Label htmlFor="job-name">Nom</Label>
@@ -314,7 +345,7 @@ export function JobDeployForm({ projects, onCreated, onCancel }: JobDeployFormPr
 
         <div className="space-y-2">
           <Label>Type d&apos;exécution</Label>
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {RUNNER_OPTIONS.map((opt) => {
               const Icon = opt.icon;
               const active = runnerType === opt.id;
@@ -345,8 +376,9 @@ export function JobDeployForm({ projects, onCreated, onCancel }: JobDeployFormPr
       </SectionCard>
 
       {/* 02 — Source */}
+      {showSource && (
       <SectionCard
-        step={2}
+        step={sourceStep}
         icon={useGit ? GitBranch : HardDrive}
         title="Source du code"
         description="Dépôt Git cloné à chaque exécution, ou fichiers internes gérés dans RunFlow"
@@ -425,8 +457,9 @@ export function JobDeployForm({ projects, onCreated, onCancel }: JobDeployFormPr
                 <Label htmlFor="git-path">Sous-dossier</Label>
                 <Input id="git-path" value={repoPath} onChange={(e) => setRepoPath(e.target.value)} placeholder="optionnel" />
               </div>
+              {showEntrypoint && (
               <div className="space-y-2">
-                <Label htmlFor="entrypoint">Script (entrypoint)</Label>
+                <Label htmlFor="entrypoint">{entrypointLabel}</Label>
                 {preview?.suggested_entrypoints.length ? (
                   <Select id="entrypoint" value={entrypoint} onChange={(e) => refreshEntrypointAnalysis(e.target.value)} required>
                     {preview.suggested_entrypoints.map((p) => (
@@ -449,9 +482,16 @@ export function JobDeployForm({ projects, onCreated, onCancel }: JobDeployFormPr
                   />
                 )}
               </div>
+              )}
             </div>
 
-            {repoPath && (
+            {isAnsible && (
+              <p className="text-[11px] text-muted-foreground">
+                Le playbook et l&apos;inventaire se configurent dans la section « Configuration Ansible » ci-dessous.
+              </p>
+            )}
+
+            {showEntrypoint && repoPath && (
               <p className="text-[11px] text-muted-foreground">
                 L&apos;entrypoint est relatif au sous-dossier « {repoPath} ».
               </p>
@@ -461,7 +501,15 @@ export function JobDeployForm({ projects, onCreated, onCancel }: JobDeployFormPr
               <div className="grid gap-4 lg:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Contenu du dépôt</Label>
-                  <GitPreviewTree files={preview.files} selectedPath={entrypoint} onSelectEntrypoint={refreshEntrypointAnalysis} />
+                  <GitPreviewTree
+                    files={preview.files}
+                    selectedPath={isAnsible ? ansibleConfig.playbook ?? "" : entrypoint}
+                    onSelectEntrypoint={(path) =>
+                      isAnsible
+                        ? setAnsibleConfig((c) => ({ ...c, playbook: path }))
+                        : refreshEntrypointAnalysis(path)
+                    }
+                  />
                 </div>
                 <div className="space-y-2 text-xs text-muted-foreground rounded-xl border border-border bg-card/30 p-3">
                   <p>
@@ -483,26 +531,33 @@ export function JobDeployForm({ projects, onCreated, onCancel }: JobDeployFormPr
           </div>
         ) : (
           <div className="space-y-2 max-w-sm">
-            <Label htmlFor="entrypoint-internal">Script (entrypoint)</Label>
-            <Input
-              id="entrypoint-internal"
-              value={entrypoint}
-              onChange={(e) => setEntrypoint(e.target.value)}
-              placeholder={RUNNER_OPTIONS.find((r) => r.id === runnerType)?.entry}
-              className="font-mono text-sm"
-              required
-            />
+            {showEntrypoint && (
+              <>
+                <Label htmlFor="entrypoint-internal">{entrypointLabel}</Label>
+                <Input
+                  id="entrypoint-internal"
+                  value={entrypoint}
+                  onChange={(e) => setEntrypoint(e.target.value)}
+                  placeholder={RUNNER_OPTIONS.find((r) => r.id === runnerType)?.entry}
+                  className="font-mono text-sm"
+                  required
+                />
+              </>
+            )}
             <p className="text-[11px] text-muted-foreground">
-              Vous pourrez éditer les fichiers dans l&apos;onglet « Code » après la création.
+              {isAnsible
+                ? "Créez votre playbook et vos rôles dans l'onglet « Code » après la création. Le chemin du playbook se règle dans la section « Configuration Ansible »."
+                : "Vous pourrez éditer les fichiers dans l'onglet « Code » après la création."}
             </p>
           </div>
         )}
       </SectionCard>
+      )}
 
       {/* 02b — Configuration Ansible / SSH */}
-      {RUNNER_CONFIG_TYPES.has(runnerType) && (
+      {showRunnerConfig && (
         <SectionCard
-          step={3}
+          step={runnerConfigStep}
           icon={runnerType === "ssh" ? Terminal : Boxes}
           title={runnerType === "ssh" ? "Configuration SSH" : "Configuration Ansible"}
           description={
@@ -526,7 +581,8 @@ export function JobDeployForm({ projects, onCreated, onCancel }: JobDeployFormPr
       )}
 
       {/* 03 — Environnement */}
-      <SectionCard step={4} icon={FileCode} title="Variables d'environnement" description="Injectées à chaque exécution, jamais versionnées dans Git">
+      {showEnv && (
+      <SectionCard step={envStep} icon={FileCode} title="Variables d'environnement" description="Injectées à chaque exécution, jamais versionnées dans Git">
         <EnvEditor
           key={preview?.env_example_path ?? "env"}
           value={envContent}
@@ -534,9 +590,10 @@ export function JobDeployForm({ projects, onCreated, onCancel }: JobDeployFormPr
           hint={preview?.env_example_path ? `Prérempli depuis ${preview.env_example_path}` : "Format KEY=value"}
         />
       </SectionCard>
+      )}
 
       {/* 05 — Arguments */}
-      <SectionCard step={5} icon={SlidersHorizontal} title="Arguments" description="Détectés automatiquement depuis argparse / Bash, ou ajoutés à la main">
+      <SectionCard step={argsStep} icon={SlidersHorizontal} title="Arguments" description="Détectés automatiquement depuis argparse / Bash, ou ajoutés à la main">
         <div className="flex items-center justify-between gap-2">
           <p className="text-xs text-muted-foreground">
             {parameters.length} argument{parameters.length > 1 ? "s" : ""}
@@ -549,7 +606,9 @@ export function JobDeployForm({ projects, onCreated, onCancel }: JobDeployFormPr
 
         {parameters.length === 0 ? (
           <p className="text-sm text-muted-foreground rounded-lg border border-dashed border-border px-4 py-6 text-center">
-            Aucun argument — synchronisez le dépôt Git ou ajoutez-en manuellement.
+            {isSsh
+              ? "Aucun argument — ajoutez-en pour paramétrer la commande (placeholders {{ arg }}) ou la liste d'hôtes."
+              : "Aucun argument — synchronisez le dépôt Git ou ajoutez-en manuellement."}
           </p>
         ) : (
           <div className="space-y-2">
