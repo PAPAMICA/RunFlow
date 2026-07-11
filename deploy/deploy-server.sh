@@ -51,6 +51,14 @@ patch_env_var() {
   rm -f "${ENV_FILE}.bak"
 }
 
+postgres_data_exists() {
+  [[ -f "$ROOT/data/postgres/PG_VERSION" ]]
+}
+
+escape_sql_string() {
+  printf "%s" "$1" | sed "s/'/''/g"
+}
+
 ensure_generated_secrets() {
   local changed=0
   if [[ -z "${JWT_SECRET:-}" || "${JWT_SECRET}" == change-me* ]]; then
@@ -65,7 +73,11 @@ ensure_generated_secrets() {
     log "RUNFLOW_MASTER_KEY générée"
     changed=1
   fi
-  if [[ -z "${POSTGRES_PASSWORD:-}" || "${POSTGRES_PASSWORD}" == change-me* ]]; then
+  if postgres_data_exists; then
+    [[ -n "${POSTGRES_PASSWORD:-}" ]] \
+      || die "Données Postgres existantes : définissez POSTGRES_PASSWORD dans .env (mot de passe actuel ou nouveau après sync)"
+    log "Données Postgres existantes — POSTGRES_PASSWORD conservé depuis .env"
+  elif [[ -z "${POSTGRES_PASSWORD:-}" || "${POSTGRES_PASSWORD}" == change-me* ]]; then
     POSTGRES_PASSWORD="$(generate_secret)"
     patch_env_var "POSTGRES_PASSWORD" "$POSTGRES_PASSWORD"
     log "POSTGRES_PASSWORD généré"
@@ -148,6 +160,20 @@ wait_for_api() {
   die "L'API n'a pas démarré dans le délai imparti"
 }
 
+sync_postgres_password() {
+  if ! postgres_data_exists; then
+    return 0
+  fi
+  local pg_user="${POSTGRES_USER:-runflow}"
+  local pg_password_escaped
+  pg_password_escaped="$(escape_sql_string "${POSTGRES_PASSWORD}")"
+  log "Synchronisation du mot de passe Postgres (${pg_user}) avec .env..."
+  $COMPOSE exec -T postgres psql -U "$pg_user" -d postgres \
+    -c "ALTER USER ${pg_user} PASSWORD '${pg_password_escaped}';" \
+    >/dev/null
+  log "Mot de passe Postgres aligné sur .env"
+}
+
 ensure_admin() {
   local email="${RUNFLOW_ADMIN_EMAIL:-admin@runflow.local}"
   local password="${RUNFLOW_ADMIN_PASSWORD:?RUNFLOW_ADMIN_PASSWORD manquant dans .env}"
@@ -228,6 +254,7 @@ main() {
   $COMPOSE up -d postgres valkey
   wait_for_service_healthy runflow_postgres
   wait_for_service_healthy runflow_valkey
+  sync_postgres_password
 
   log "Build et démarrage de l'API..."
   $COMPOSE up -d --build api
