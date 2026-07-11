@@ -14,6 +14,7 @@ RUN corepack enable && corepack prepare pnpm@10 --activate \
     && pnpm install --frozen-lockfile
 
 COPY apps/web .
+RUN mkdir -p public
 RUN pnpm build
 
 FROM node:22-alpine AS runner
@@ -23,7 +24,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
-COPY --from=builder /app/public ./public 2>/dev/null || true
+COPY --from=builder /app/public ./public
 
 EXPOSE 3000
 CMD ["node", "server.js"]
