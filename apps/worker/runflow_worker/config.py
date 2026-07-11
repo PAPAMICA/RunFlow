@@ -30,6 +30,8 @@ class WorkerSettings(BaseSettings):
     )
     runs_dir: str = "/worker-data/runs"
     pip_cache_dir: str = "/worker-data/pip-cache"
+    cleanup_workspaces: bool = Field(default=True, validation_alias="RUNFLOW_CLEANUP_WORKSPACES")
+    keep_debug_workspaces: bool = Field(default=True, validation_alias="RUNFLOW_KEEP_DEBUG_WORKSPACES")
 
 
 @lru_cache

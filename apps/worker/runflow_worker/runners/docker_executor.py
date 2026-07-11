@@ -16,7 +16,7 @@ from docker.errors import DockerException
 
 from runflow_worker.config import get_settings
 from runflow_worker.debug_log import emit_post_run_debug, emit_runner_debug, emit_workspace_debug
-from runflow_worker.docker_paths import resolve_docker_bind_path
+from runflow_worker.docker_paths import resolve_docker_bind_path, self_container_id
 from runflow_worker.runners.base import BaseRunner, RunContext, RunOutput
 from runflow_shared import RunnerType
 
@@ -49,8 +49,9 @@ class DockerExecutor(BaseRunner):
         args_file = input_dir / "args.json"
         args_file.write_text(json.dumps(ctx.arguments, ensure_ascii=False), encoding="utf-8")
 
-        env["RUNFLOW_ARGS_FILE"] = "/runflow/input/args.json"
-        env["RUNFLOW_RESULT_FILE"] = "/runflow/output/result.json"
+        root = ctx.container_root
+        env["RUNFLOW_ARGS_FILE"] = f"{root}/input/args.json"
+        env["RUNFLOW_RESULT_FILE"] = f"{root}/output/result.json"
         if ctx.debug:
             env["RUNFLOW_DEBUG"] = "1"
         for key, value in ctx.arguments.items():
@@ -79,26 +80,29 @@ class DockerExecutor(BaseRunner):
                 return True
         return False
 
-    def _env_prefix(self) -> str:
-        return "set -a && [ -f /runflow/job/.env ] && . /runflow/job/.env && set +a; "
+    def _env_prefix(self, ctx: RunContext) -> str:
+        root = ctx.container_root
+        return f"set -a && [ -f {root}/job/.env ] && . {root}/job/.env && set +a; "
 
     def _python_command(self, ctx: RunContext, entrypoint: str) -> list[str]:
-        env_load = self._env_prefix()
+        env_load = self._env_prefix(ctx)
         job_path = ctx.job["job_files_path"]
-        entry = f"/runflow/job/{entrypoint}"
+        root = ctx.container_root
+        cache = ctx.cache_root
+        entry = f"{root}/job/{entrypoint}"
         script = f"{env_load}exec python {entry}"
 
         if self._has_requirements(job_path):
             req_hash = self._requirements_hash(job_path)
             script = (
                 f"{env_load}"
-                f"if [ -f /runflow/job/requirements.txt ] && [ -s /runflow/job/requirements.txt ]; then "
-                f"  if [ ! -f /cache/venv-{req_hash}/.ready ]; then "
-                f"    python -m venv /cache/venv-{req_hash} && "
-                f"    /cache/venv-{req_hash}/bin/pip install -q -r /runflow/job/requirements.txt && "
-                f"    touch /cache/venv-{req_hash}/.ready; "
+                f"if [ -f {root}/job/requirements.txt ] && [ -s {root}/job/requirements.txt ]; then "
+                f"  if [ ! -f {cache}/venv-{req_hash}/.ready ]; then "
+                f"    python -m venv {cache}/venv-{req_hash} && "
+                f"    {cache}/venv-{req_hash}/bin/pip install -q -r {root}/job/requirements.txt && "
+                f"    touch {cache}/venv-{req_hash}/.ready; "
                 f"  fi && "
-                f"  exec /cache/venv-{req_hash}/bin/python {entry}; "
+                f"  exec {cache}/venv-{req_hash}/bin/python {entry}; "
                 f"fi; "
                 f"exec python {entry}"
             )
@@ -112,6 +116,24 @@ class DockerExecutor(BaseRunner):
             worker_data_dir=settings.worker_data_dir,
             host_data_dir=settings.host_data_dir,
         )
+
+    def _plan_runtime(self, ctx: RunContext) -> None:
+        """Decide how the runner container will access the workspace.
+
+        When the worker itself runs inside Docker, we share its volumes with the
+        runner via ``volumes_from`` so files are visible at the exact same paths —
+        no fragile host-path translation needed. Otherwise we bind-mount.
+        """
+        settings = get_settings()
+        container_id = self_container_id() if settings.docker_enabled else None
+        if container_id:
+            ctx.volumes_from = container_id
+            ctx.container_root = str(Path(ctx.workspace_path))
+            ctx.cache_root = str(Path(settings.pip_cache_dir))
+        else:
+            ctx.volumes_from = None
+            ctx.container_root = "/runflow"
+            ctx.cache_root = "/cache"
 
     async def prepare(self, ctx: RunContext) -> None:
         import logging
@@ -136,6 +158,7 @@ class DockerExecutor(BaseRunner):
         for sub in ("input", "output"):
             (workspace / sub).mkdir(parents=True, exist_ok=True)
 
+        self._plan_runtime(ctx)
         ctx.env = self._build_env(ctx)
 
         if ctx.debug:
@@ -168,25 +191,35 @@ class DockerExecutor(BaseRunner):
         timeout = job.get("timeout_seconds", 300)
         entrypoint = job.get("resolved_entrypoint") or job.get("entrypoint", "main.py")
 
-        volumes = {
-            self._docker_volume_path(str(workspace)): {"bind": "/runflow", "mode": "rw"},
-        }
         cache_dir = Path(settings.pip_cache_dir)
         cache_dir.mkdir(parents=True, exist_ok=True)
-        volumes[self._docker_volume_path(str(cache_dir))] = {"bind": "/cache", "mode": "rw"}
+
+        run_kwargs: dict[str, Any] = {}
+        volumes: dict[str, dict[str, str]] = {}
+        if ctx.volumes_from:
+            # Runner inherits the worker's mounts; files share the same paths.
+            run_kwargs["volumes_from"] = [ctx.volumes_from]
+        else:
+            volumes = {
+                self._docker_volume_path(str(workspace)): {"bind": "/runflow", "mode": "rw"},
+                self._docker_volume_path(str(cache_dir)): {"bind": "/cache", "mode": "rw"},
+            }
+            run_kwargs["volumes"] = volumes
 
         if ctx.debug and ctx.on_debug_log:
-            workspace_host = self._docker_volume_path(str(workspace))
-            cache_host = self._docker_volume_path(str(cache_dir))
             entry_container = workspace / "job" / entrypoint
-            ctx.on_debug_log(f"Volume workspace (hôte Docker) : {workspace_host}")
-            ctx.on_debug_log(f"Volume pip-cache (hôte Docker) : {cache_host}")
+            if ctx.volumes_from:
+                ctx.on_debug_log(f"Partage des volumes du worker (volumes_from={ctx.volumes_from[:12]})")
+                ctx.on_debug_log(f"Racine runner : {ctx.container_root}")
+            else:
+                ctx.on_debug_log(f"Volume workspace (hôte Docker) : {self._docker_volume_path(str(workspace))}")
+                ctx.on_debug_log(f"Volume pip-cache (hôte Docker) : {self._docker_volume_path(str(cache_dir))}")
             ctx.on_debug_log(
                 f"Entrypoint worker : {'présent' if entry_container.is_file() else 'ABSENT'} ({entry_container})"
             )
 
         if runner_type == RunnerType.BASH:
-            command = ["bash", f"/runflow/job/{entrypoint}"]
+            command = ["bash", f"{ctx.container_root}/job/{entrypoint}"]
         elif runner_type == RunnerType.ANSIBLE:
             command = self._ansible_command(ctx)
         else:
@@ -200,7 +233,7 @@ class DockerExecutor(BaseRunner):
                 runner_type=runner_type,
                 image=image,
                 command=command,
-                volumes=volumes,
+                volumes=volumes or {f"(volumes_from {ctx.volumes_from})": {"bind": ctx.container_root, "mode": "rw"}},
                 env=ctx.env,
                 secret_keys=secret_keys,
                 on_log=ctx.on_debug_log,
@@ -210,14 +243,14 @@ class DockerExecutor(BaseRunner):
             self._container = client.containers.run(
                 image=image,
                 command=command,
-                volumes=volumes,
                 environment=ctx.env,
                 detach=True,
                 remove=False,
                 network_mode=network_mode if network_mode != "none" else "none",
                 mem_limit=f"{memory_mb}m",
                 nano_cpus=int(cpu_limit * 1e9),
-                working_dir="/runflow/job",
+                working_dir=f"{ctx.container_root}/job",
+                **run_kwargs,
             )
 
             stdout_chunks: list[str] = []
@@ -249,6 +282,11 @@ class DockerExecutor(BaseRunner):
                 )
             except asyncio.TimeoutError:
                 self._container.kill()
+                log_task.cancel()
+                try:
+                    await log_task
+                except (asyncio.CancelledError, Exception):
+                    pass
                 output = RunOutput(exit_code=124, stderr="Job timed out", stdout="".join(stdout_chunks))
                 if ctx.debug:
                     await asyncio.to_thread(
@@ -291,7 +329,8 @@ class DockerExecutor(BaseRunner):
         ansible_cfg = ctx.job.get("ansible_config") or {}
         playbook = ansible_cfg.get("playbook", "playbook.yml")
         inventory = ansible_cfg.get("inventory", "inventory")
-        extra_vars_file = "/runflow/input/extra_vars.json"
+        root = ctx.container_root
+        extra_vars_file = f"{root}/input/extra_vars.json"
         extra_vars_path = Path(ctx.workspace_path) / "input" / "extra_vars.json"
         extra_vars_path.parent.mkdir(parents=True, exist_ok=True)
         extra_vars_path.write_text(json.dumps(ctx.arguments), encoding="utf-8")
@@ -306,8 +345,8 @@ class DockerExecutor(BaseRunner):
 
         return [
             "ansible-playbook",
-            f"/runflow/job/{playbook}",
-            "-i", f"/runflow/job/{inventory}",
+            f"{root}/job/{playbook}",
+            "-i", f"{root}/job/{inventory}",
             "-e", f"@{extra_vars_file}",
         ]
 

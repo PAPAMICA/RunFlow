@@ -1,18 +1,29 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { GitBranch, Bell, Play, Save } from "lucide-react";
+import {
+  GitBranch,
+  Bell,
+  Bug,
+  CheckCircle2,
+  Clock,
+  FileCode,
+  Play,
+  Save,
+  Timer,
+} from "lucide-react";
 import { AskAIPanel } from "@/components/AskAIPanel";
 import { AppShell } from "@/components/AppShell";
 import { DataTable } from "@/components/DataTable";
+import { EmptyState } from "@/components/EmptyState";
 import { ForcedArgumentsEditor } from "@/components/ForcedArgumentsEditor";
 import { FavoriteButton } from "@/components/FavoriteButton";
 import { JobNotificationsForm } from "@/components/JobNotificationsForm";
 import { JobRunForm } from "@/components/JobRunForm";
 import { PageHeader } from "@/components/PageHeader";
+import { StatCard } from "@/components/StatCard";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Tabs } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
@@ -23,6 +34,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { api, Job, JobFileNode, JobStats, Run } from "@/lib/api";
 import { buildRunArguments, defaultArgsFromJob } from "@/lib/job-args";
+import { formatDuration, relativeTime } from "@/lib/utils";
 
 const MonacoEditor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
 
@@ -67,6 +79,13 @@ export default function JobDetailPage() {
   }
 
   useEffect(() => { loadJob(); }, [id]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const requested = params.get("tab") as Tab | null;
+    const valid: Tab[] = ["overview", "source", "code", "parameters", "runs", "run", "notifications"];
+    if (requested && valid.includes(requested)) setTab(requested);
+  }, []);
 
   useEffect(() => {
     if (tab === "code") api.listJobFiles(id).then(setFiles).catch(console.error);
@@ -126,22 +145,30 @@ export default function JobDetailPage() {
   if (!job) {
     return (
       <AppShell>
-        <div className="space-y-4 animate-pulse">
-          <div className="h-8 w-48 bg-card rounded-lg" />
-          <div className="h-4 w-72 bg-card rounded" />
-          <div className="h-64 bg-card rounded-xl" />
+        <div className="space-y-6 animate-pulse">
+          <div className="space-y-3">
+            <div className="h-4 w-32 bg-card rounded" />
+            <div className="h-8 w-64 bg-card rounded-lg" />
+            <div className="h-4 w-80 bg-card rounded" />
+          </div>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="h-28 bg-card rounded-2xl" />
+            ))}
+          </div>
+          <div className="h-64 bg-card rounded-2xl" />
         </div>
       </AppShell>
     );
   }
 
-  const tabs: { key: Tab; label: string; icon?: typeof Bell }[] = [
+  const tabs: { key: Tab; label: string; icon?: typeof Bell; badge?: string | number }[] = [
     { key: "overview", label: "Vue d'ensemble" },
     { key: "source", label: "Source & .env" },
     { key: "code", label: "Code" },
-    { key: "parameters", label: "Paramètres" },
+    { key: "parameters", label: "Paramètres", badge: job.parameters.length || undefined },
     { key: "notifications", label: "Notifications", icon: Bell },
-    { key: "runs", label: "Exécutions" },
+    { key: "runs", label: "Exécutions", badge: stats?.total_runs || undefined },
     { key: "run", label: "Lancer" },
   ];
 
@@ -156,6 +183,7 @@ export default function JobDetailPage() {
         ]}
         action={
           <div className="flex items-center gap-2">
+            <StatusBadge status={job.enabled ? "enabled" : "disabled"} />
             <FavoriteButton jobId={job.id} variant="outline" />
             <Button onClick={() => setTab("run")} size="lg">
               <Play className="h-4 w-4" />
@@ -167,7 +195,7 @@ export default function JobDetailPage() {
 
       <div className="mb-6 pb-2 border-b border-border">
         <Tabs
-          items={tabs.map((t) => ({ key: t.key, label: t.label, icon: t.icon }))}
+          items={tabs.map((t) => ({ key: t.key, label: t.label, icon: t.icon, badge: t.badge }))}
           active={tab}
           onChange={(k) => setTab(k as Tab)}
         />
@@ -175,34 +203,105 @@ export default function JobDetailPage() {
 
       {tab === "overview" && (
         <div className="space-y-6">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {stats && [
-              { label: "Total runs", value: stats.total_runs },
-              { label: "Taux de succès", value: `${stats.success_rate}%` },
-              { label: "Durée moyenne", value: stats.avg_duration_seconds ? `${stats.avg_duration_seconds.toFixed(1)}s` : "—" },
-              { label: "Dernier run", value: stats.last_run?.status ?? "—" },
-            ].map((s) => (
-              <Card key={s.label}>
-                <CardContent className="pt-5">
-                  <p className="text-sm text-muted-foreground">{s.label}</p>
-                  <p className="text-2xl font-bold mt-1">{s.value}</p>
-                </CardContent>
-              </Card>
-            ))}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <StatCard label="Total runs" value={stats?.total_runs ?? "—"} icon={Play} tone="primary" />
+            <StatCard
+              label="Taux de succès"
+              value={stats ? `${stats.success_rate}%` : "—"}
+              icon={CheckCircle2}
+              tone="success"
+              trend={stats ? (stats.success_rate >= 90 ? "up" : stats.success_rate >= 60 ? "neutral" : "down") : undefined}
+              trendLabel={stats ? `${stats.success_rate}%` : undefined}
+            />
+            <StatCard
+              label="Durée moyenne"
+              value={stats?.avg_duration_seconds ? formatDuration(stats.avg_duration_seconds) : "—"}
+              icon={Clock}
+              tone="accent"
+            />
+            <StatCard
+              label="Timeout"
+              value={job.timeout_seconds ? formatDuration(job.timeout_seconds) : "∞"}
+              icon={Timer}
+              tone="info"
+            />
           </div>
-          <Card>
-            <CardContent className="pt-5 space-y-2 text-sm">
-              <p><span className="text-muted-foreground">Entrypoint :</span> <code className="font-mono">{job.entrypoint}</code></p>
-              <p><span className="text-muted-foreground">Source :</span> {job.source_type}</p>
-              {job.git_config && (
-                <p className="flex items-center gap-2">
-                  <GitBranch className="h-4 w-4 text-primary" />
-                  <code className="font-mono text-xs">{job.git_config.repository_url}</code>
-                </p>
-              )}
-              {job.has_env_file && <Badge variant="accent">.env configuré</Badge>}
-            </CardContent>
-          </Card>
+
+          <div className="grid gap-4 lg:grid-cols-3">
+            <Card className="lg:col-span-2">
+              <CardHeader>
+                <CardTitle className="text-sm">Configuration</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-0 text-sm divide-y divide-border-subtle">
+                <div className="flex items-center gap-3 py-2.5">
+                  <FileCode className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <span className="text-muted-foreground w-28 shrink-0">Entrypoint</span>
+                  <code className="font-mono text-xs truncate">{job.entrypoint}</code>
+                </div>
+                <div className="flex items-center gap-3 py-2.5">
+                  <Play className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <span className="text-muted-foreground w-28 shrink-0">Runner</span>
+                  <code className="font-mono text-xs">{job.runner_type}</code>
+                </div>
+                {job.git_config && (
+                  <>
+                    <div className="flex items-center gap-3 py-2.5">
+                      <GitBranch className="h-4 w-4 text-primary shrink-0" />
+                      <span className="text-muted-foreground w-28 shrink-0">Dépôt</span>
+                      <code className="font-mono text-xs truncate">{job.git_config.repository_url}</code>
+                    </div>
+                    <div className="flex items-center gap-3 py-2.5">
+                      <GitBranch className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <span className="text-muted-foreground w-28 shrink-0">Branche</span>
+                      <code className="font-mono text-xs">{job.git_config.branch ?? "main"}</code>
+                      {job.git_config.path && (
+                        <code className="font-mono text-xs text-muted-foreground truncate">/ {job.git_config.path}</code>
+                      )}
+                    </div>
+                  </>
+                )}
+                <div className="flex items-center gap-3 py-2.5">
+                  <Bell className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <span className="text-muted-foreground w-28 shrink-0">Options</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    <Badge variant={job.source_type === "git" ? "default" : "muted"}>{job.source_type}</Badge>
+                    {job.has_env_file && <Badge variant="accent">.env</Badge>}
+                    {(job.parameters?.length ?? 0) > 0 && (
+                      <Badge variant="info">{job.parameters.length} param{job.parameters.length > 1 ? "s" : ""}</Badge>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm">Dernier run</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {stats?.last_run ? (
+                  <button
+                    onClick={() => router.push(`/runs/${stats.last_run!.id}`)}
+                    className="w-full text-left rounded-lg border border-border-subtle p-3 hover:border-border-strong hover:bg-card-hover transition-colors"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <StatusBadge status={stats.last_run.status} />
+                      {stats.last_run.debug && <Bug className="h-3.5 w-3.5 text-accent" />}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-2 font-mono truncate">
+                      {stats.last_run.id.slice(0, 14)}…
+                    </p>
+                    <div className="flex items-center justify-between mt-2 text-xs text-muted-foreground">
+                      <span>{relativeTime(stats.last_run.queued_at)}</span>
+                      <span className="tabular-nums">{formatDuration(stats.last_run.duration_seconds)}</span>
+                    </div>
+                  </button>
+                ) : (
+                  <p className="text-sm text-muted-foreground py-4 text-center">Aucune exécution</p>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </div>
       )}
 
@@ -351,30 +450,45 @@ export default function JobDetailPage() {
       {tab === "runs" && (
         <Card>
           <CardContent className="pt-5">
-            <DataTable>
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>Statut</th>
-                  <th>Durée</th>
-                  <th>Date</th>
-                </tr>
-              </thead>
-              <tbody>
-                {jobRuns.map((r) => (
-                  <tr key={r.id}>
-                    <td>
-                      <Link href={`/runs/${r.id}`} className="link-mono text-xs">
-                        {r.id.slice(0, 10)}…
-                      </Link>
-                    </td>
-                    <td><StatusBadge status={r.status} /></td>
-                    <td className="text-muted-foreground tabular-nums">{r.duration_seconds?.toFixed(1) ?? "—"}s</td>
-                    <td className="text-muted-foreground text-xs">{new Date(r.queued_at).toLocaleString("fr-FR")}</td>
+            {jobRuns.length === 0 ? (
+              <EmptyState
+                icon={Play}
+                title="Aucune exécution"
+                description="Ce job n'a pas encore été lancé. Lancez-le pour voir l'historique ici."
+                onAction={() => setTab("run")}
+                actionLabel="Lancer le job"
+              />
+            ) : (
+              <DataTable>
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Statut</th>
+                    <th>Trigger</th>
+                    <th>Durée</th>
+                    <th>Date</th>
                   </tr>
-                ))}
-              </tbody>
-            </DataTable>
+                </thead>
+                <tbody>
+                  {jobRuns.map((r) => (
+                    <tr key={r.id} onClick={() => router.push(`/runs/${r.id}`)} className="cursor-pointer">
+                      <td>
+                        <span className="link-mono text-xs inline-flex items-center gap-1.5">
+                          {r.id.slice(0, 10)}…
+                          {r.debug && <Bug className="h-3 w-3 text-accent" />}
+                        </span>
+                      </td>
+                      <td><StatusBadge status={r.status} /></td>
+                      <td className="text-muted-foreground capitalize text-xs">{r.trigger_type}</td>
+                      <td className="text-muted-foreground tabular-nums text-xs">{formatDuration(r.duration_seconds)}</td>
+                      <td className="text-muted-foreground text-xs" title={new Date(r.queued_at).toLocaleString("fr-FR")}>
+                        {relativeTime(r.queued_at)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </DataTable>
+            )}
           </CardContent>
         </Card>
       )}

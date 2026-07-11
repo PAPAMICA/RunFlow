@@ -39,18 +39,20 @@ export function PageHeader({
   className?: string;
 }) {
   return (
-    <header className={cn("mb-8 animate-slide-up", className)}>
+    <header className={cn("mb-7 animate-slide-up", className)}>
       {breadcrumb && breadcrumb.length > 0 && <Breadcrumb items={breadcrumb} />}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight truncate">{title}</h1>
+          <h1 className="text-2xl sm:text-[28px] font-bold tracking-tight leading-tight truncate">
+            {title}
+          </h1>
           {description && (
-            <p className="text-muted-foreground mt-1.5 text-sm max-w-2xl leading-relaxed">
+            <p className="text-muted-foreground mt-1 text-sm max-w-2xl leading-relaxed">
               {description}
             </p>
           )}
         </div>
-        {action && <div className="shrink-0 flex flex-wrap gap-2">{action}</div>}
+        {action && <div className="shrink-0 flex flex-wrap items-center gap-2">{action}</div>}
       </div>
     </header>
   );

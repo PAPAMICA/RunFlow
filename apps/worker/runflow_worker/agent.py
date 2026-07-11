@@ -216,4 +216,17 @@ class WorkerAgent:
             if stream_drain_task is not None:
                 await stream_queue.put(None)
                 await stream_drain_task
+            await self._cleanup_workspace(workspace_path, debug=debug)
             self._current_runs -= 1
+
+    async def _cleanup_workspace(self, workspace_path: str, *, debug: bool) -> None:
+        if not self.settings.cleanup_workspaces:
+            return
+        if debug and self.settings.keep_debug_workspaces:
+            return
+        import shutil
+
+        try:
+            await asyncio.to_thread(shutil.rmtree, workspace_path, ignore_errors=True)
+        except Exception:
+            logger.warning("Nettoyage workspace échoué : %s", workspace_path)

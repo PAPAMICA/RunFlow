@@ -12,6 +12,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api, WorkerInfo } from "@/lib/api";
+import { cn, relativeTime } from "@/lib/utils";
 
 export default function WorkersPage() {
   const [workers, setWorkers] = useState<WorkerInfo[]>([]);
@@ -91,29 +92,69 @@ export default function WorkersPage() {
           actionLabel="Créer un worker"
         />
       ) : (
-        <div className="grid gap-4 md:grid-cols-2">
-          {workers.map((w) => (
-            <Card key={w.id} hover>
-              <CardContent className="pt-5">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <p className="font-semibold">{w.name}</p>
-                    {w.hostname && (
-                      <p className="text-xs text-muted-foreground font-mono mt-1">{w.hostname}</p>
-                    )}
-                    <p className="text-xs text-muted-foreground mt-2">
-                      {Object.entries(w.labels).map(([k, v]) => `${k}=${v}`).join(" · ") || "Aucun label"}
-                    </p>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {workers.map((w) => {
+            const online = w.status === "online";
+            const labels = Object.entries(w.labels ?? {});
+            return (
+              <Card key={w.id} hover>
+                <CardContent className="pt-5">
+                  <div className="flex items-start gap-3">
+                    <div
+                      className={cn(
+                        "flex h-11 w-11 items-center justify-center rounded-xl shrink-0 ring-1",
+                        online
+                          ? "bg-success/10 text-success ring-success/25"
+                          : "bg-surface-2 text-muted-foreground ring-border"
+                      )}
+                    >
+                      <Server className="h-5 w-5" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="font-semibold truncate">{w.name}</p>
+                        <StatusBadge status={w.status} />
+                      </div>
+                      {w.hostname && (
+                        <p className="text-xs text-muted-foreground font-mono mt-0.5 truncate">
+                          {w.hostname}
+                        </p>
+                      )}
+                    </div>
                   </div>
-                  <StatusBadge status={w.status} />
-                </div>
-                <div className="flex gap-4 mt-4 text-sm text-muted-foreground">
-                  <span>{w.current_runs} run(s) actif(s)</span>
-                  {w.version && <span className="font-mono text-xs">v{w.version}</span>}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+
+                  {labels.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mt-4">
+                      {labels.map(([k, v]) => (
+                        <span
+                          key={k}
+                          className="rounded-md bg-surface-2 border border-border px-2 py-0.5 text-[11px] font-mono text-muted-foreground"
+                        >
+                          {k}={v}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between mt-4 pt-4 border-t border-border-subtle text-xs">
+                    <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+                      <span
+                        className={cn(
+                          "h-1.5 w-1.5 rounded-full",
+                          w.current_runs > 0 ? "bg-accent animate-pulse-soft" : "bg-muted-foreground/40"
+                        )}
+                      />
+                      {w.current_runs} run(s) actif(s)
+                    </span>
+                    <span className="flex items-center gap-3 text-muted-foreground">
+                      {w.last_seen_at && <span title={new Date(w.last_seen_at).toLocaleString("fr-FR")}>{relativeTime(w.last_seen_at)}</span>}
+                      {w.version && <span className="font-mono">v{w.version}</span>}
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       )}
     </AppShell>

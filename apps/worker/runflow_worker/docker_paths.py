@@ -3,10 +3,46 @@
 from __future__ import annotations
 
 import logging
+import re
+import socket
 from functools import lru_cache
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+_CONTAINER_ID_RE = re.compile(r"\b([0-9a-f]{64})\b")
+_SHORT_ID_RE = re.compile(r"^[0-9a-f]{12,64}$")
+
+
+@lru_cache
+def self_container_id() -> str | None:
+    """Best-effort detection of the current Docker container id (if any)."""
+    # 1) Hostname defaults to the short container id unless overridden.
+    hostname = socket.gethostname().strip()
+    if _SHORT_ID_RE.match(hostname):
+        return hostname
+
+    # 2) cgroup v1/v2 references the full 64-char id.
+    for proc_file in ("/proc/self/cgroup", "/proc/self/mountinfo"):
+        try:
+            with open(proc_file, encoding="utf-8") as fh:
+                content = fh.read()
+        except OSError:
+            continue
+        for marker in ("containers/", "docker/", "docker-", "/"):
+            for match in _CONTAINER_ID_RE.finditer(content):
+                candidate = match.group(1)
+                if marker in content[max(0, match.start() - 40) : match.start()] or marker == "/":
+                    return candidate
+
+    # 3) Docker sets HOSTNAME env to the container id too.
+    import os
+
+    env_host = os.environ.get("HOSTNAME", "").strip()
+    if _SHORT_ID_RE.match(env_host):
+        return env_host
+
+    return None
 
 
 def _parse_bind_mounts() -> dict[str, str]:

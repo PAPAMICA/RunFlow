@@ -107,18 +107,22 @@ export default function TriggersPage() {
         }
       />
 
-      <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6 mb-8">
+      <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 mb-8">
         {TRIGGER_TYPES.map((t) => {
           const Icon = t.icon;
           const count = triggers.filter((tr) => tr.trigger_type === t.id).length;
           return (
-            <Card key={t.id} className="bg-card/50">
+            <Card key={t.id} hover className={cn(count === 0 && "opacity-60")}>
               <CardContent className="pt-4 pb-4">
-                <div className="flex items-center gap-2">
-                  <Icon className={cn("h-4 w-4", t.color)} />
-                  <span className="text-xs font-medium truncate">{t.label}</span>
+                <div className="flex items-center justify-between">
+                  <div className={cn("rounded-lg p-1.5 bg-card-hover", t.color)}>
+                    <Icon className="h-4 w-4" />
+                  </div>
+                  <p className="text-2xl font-bold tabular-nums leading-none">{count}</p>
                 </div>
-                <p className="text-2xl font-bold mt-2 tabular-nums">{count}</p>
+                <span className="text-xs font-medium text-muted-foreground truncate block mt-2.5">
+                  {t.label}
+                </span>
               </CardContent>
             </Card>
           );

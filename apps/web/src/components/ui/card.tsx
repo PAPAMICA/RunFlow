@@ -4,16 +4,20 @@ export function Card({
   className,
   children,
   hover = false,
+  interactive = false,
 }: {
   className?: string;
   children: React.ReactNode;
   hover?: boolean;
+  interactive?: boolean;
 }) {
   return (
     <div
       className={cn(
-        "rounded-xl border border-border bg-card/90 backdrop-blur-sm glow-subtle",
-        hover && "transition-all hover:bg-card-hover hover:border-primary/15 cursor-default",
+        "rounded-2xl border border-border bg-card/80 backdrop-blur-sm shadow-card",
+        (hover || interactive) &&
+          "transition-all duration-200 hover:border-border-strong hover:bg-card-hover",
+        interactive && "cursor-pointer hover:-translate-y-0.5 hover:shadow-elevated",
         className
       )}
     >
@@ -23,7 +27,7 @@ export function Card({
 }
 
 export function CardHeader({ className, children }: { className?: string; children: React.ReactNode }) {
-  return <div className={cn("px-5 pt-5 pb-2", className)}>{children}</div>;
+  return <div className={cn("px-5 pt-5 pb-3", className)}>{children}</div>;
 }
 
 export function CardTitle({ className, children }: { className?: string; children: React.ReactNode }) {
