@@ -119,6 +119,13 @@ Le script `deploy/deploy-server.sh` automatise :
 - génération des secrets (JWT, master key, postgres, admin)
 - build des runners + stack Docker
 - création admin + worker intégré avec token
+- options `--logs` (suivi après déploiement) et `--logs-only` (diagnostic sans redéployer)
+
+```bash
+./deploy/deploy-server.sh --logs          # déploie puis affiche les logs
+./deploy/deploy-server.sh --logs-only     # diagnostic + logs (502, crash, etc.)
+./deploy/deploy-server.sh --logs-only web # logs d'un seul service
+```
 
 ```bash
 # Manuel (équivalent)

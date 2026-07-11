@@ -104,12 +104,25 @@ services:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?NEXT_PUBLIC_API_URL is required}
     image: runflow/web:0.1.0
     container_name: runflow_web
+    environment:
+      HOSTNAME: "0.0.0.0"
+      PORT: "3000"
     networks:
       - internal
       - proxy
     depends_on:
       api:
         condition: service_started
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "node -e \"require('http').get('http://127.0.0.1:3000/login',r=>process.exit(r.statusCode<500?0:1)).on('error',()=>process.exit(1))\"",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
     restart: unless-stopped
     labels:
       - "traefik.enable=true"

@@ -17,6 +17,28 @@ WORKER_ENV="$WORKER_DIR/worker.env"
 log() { echo "==> $*"; }
 die() { echo "ERROR: $*" >&2; exit 1; }
 
+usage() {
+  cat <<EOF
+Usage: $(basename "$0") [options]
+
+Options :
+  --reset       Arrête la stack et supprime data/ avant déploiement
+  --logs        Affiche les derniers logs puis suit api, web et worker
+  --logs-only   Diagnostic + logs uniquement (sans redéployer)
+  -h, --help    Cette aide
+
+Exemples :
+  ./deploy/deploy-server.sh --logs
+  ./deploy/deploy-server.sh --logs-only
+  ./deploy/deploy-server.sh --logs-only web
+EOF
+}
+
+LOGS_FOLLOW=0
+LOGS_ONLY=0
+RESET_DONE=0
+LOG_SERVICES="api web worker"
+
 require_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "Commande requise introuvable : $1"
 }
@@ -384,41 +406,162 @@ EOF
   log "Credentials worker écrits dans $WORKER_ENV"
 }
 
+parse_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --reset)
+        RESET_DONE=1
+        shift
+        ;;
+      --logs)
+        LOGS_FOLLOW=1
+        shift
+        ;;
+      --logs-only)
+        LOGS_ONLY=1
+        shift
+        if [[ $# -gt 0 && "$1" != --* ]]; then
+          LOG_SERVICES="$1"
+          shift
+        fi
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      *)
+        die "Argument inconnu : $1 (voir --help)"
+        ;;
+    esac
+  done
+}
+
+print_log_commands() {
+  echo " Logs   : $COMPOSE logs --tail=100 api web worker"
+  echo "          : $COMPOSE logs -f api web worker"
+  echo "          : $0 --logs-only"
+}
+
+show_container_logs() {
+  local container="$1"
+  local lines="${2:-60}"
+  if docker inspect "$container" >/dev/null 2>&1; then
+    echo "--- ${container} (dernières ${lines} lignes) ---"
+    docker logs --tail "$lines" "$container" 2>&1 || true
+    echo ""
+  fi
+}
+
+diagnose_stack() {
+  log "Diagnostic des conteneurs..."
+  local c status health
+  for c in runflow_web runflow_api runflow_postgres runflow_valkey "runflow_worker_${WORKER_NAME:-server}"; do
+    if ! docker inspect "$c" >/dev/null 2>&1; then
+      log "${c} : absent"
+      continue
+    fi
+    status="$(docker inspect --format '{{.State.Status}}' "$c" 2>/dev/null || echo unknown)"
+    health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}n/a{{end}}' "$c" 2>/dev/null || echo n/a)"
+    log "${c} : status=${status} health=${health}"
+  done
+
+  if docker inspect runflow_web >/dev/null 2>&1; then
+    log "Test HTTP interne web (localhost:3000)..."
+    if docker exec runflow_web node -e "
+const http = require('http');
+const req = http.get('http://127.0.0.1:3000/login', (res) => {
+  console.log('HTTP', res.statusCode);
+  process.exit(res.statusCode < 500 ? 0 : 1);
+});
+req.on('error', (err) => { console.error(err.message); process.exit(1); });
+req.setTimeout(8000, () => { console.error('timeout'); process.exit(1); });
+" 2>&1; then
+      log "Web répond en interne"
+    else
+      log "Web ne répond pas en interne — logs :"
+      show_container_logs runflow_web 80
+    fi
+  fi
+}
+
+show_logs() {
+  local services="${1:-$LOG_SERVICES}"
+  log "Derniers logs (${services})..."
+  $COMPOSE logs --tail=100 $services 2>&1 || true
+  echo ""
+  log "Suivi des logs (Ctrl+C pour quitter) : $COMPOSE logs -f $services"
+  $COMPOSE logs -f $services
+}
+
+wait_for_web() {
+  log "Attente de l'interface web..."
+  local i status
+  for i in $(seq 1 60); do
+    if docker exec runflow_web node -e "
+const http = require('http');
+const req = http.get('http://127.0.0.1:3000/login', (res) => process.exit(res.statusCode < 500 ? 0 : 1));
+req.on('error', () => process.exit(1));
+req.setTimeout(5000, () => process.exit(1));
+" >/dev/null 2>&1; then
+      log "Interface web prête"
+      return 0
+    fi
+    status="$(docker inspect --format '{{.State.Status}}' runflow_web 2>/dev/null || true)"
+    if [[ "$status" == "restarting" || "$status" == "exited" ]]; then
+      log "Conteneur web en échec, logs récents :"
+      show_container_logs runflow_web 80
+      die "Le conteneur runflow_web a crashé (status=${status})"
+    fi
+    if (( i % 10 == 0 )); then
+      log "Toujours en attente web (${i}/60) — derniers logs :"
+      show_container_logs runflow_web 20
+    fi
+    sleep 2
+  done
+  show_container_logs runflow_web 80
+  die "L'interface web n'a pas démarré (502 probable côté Traefik)"
+}
+
 main() {
   require_cmd docker
   require_cmd openssl
 
-  local reset_done=0
-  if [[ "${1:-}" == "--reset" ]]; then
-    log "Reset complet : arrêt des conteneurs et suppression de data/"
-    $COMPOSE down --remove-orphans || true
-    rm -rf "$ROOT/data"
-    reset_done=1
-    shift
-  fi
+  parse_args "$@"
 
   ensure_env_file
-  ensure_generated_secrets
-
-  if [[ $reset_done -eq 1 ]]; then
-    generate_and_save_postgres_password "reset complet"
-  fi
+  load_env
   export_compose_env
-  validate_env
 
   WORKER_NAME="${WORKER_NAME:-server}"
   WORKER_DIR="$ROOT/data/worker-${WORKER_NAME}"
   WORKER_ENV="$WORKER_DIR/worker.env"
+
+  if [[ $LOGS_ONLY -eq 1 ]]; then
+    diagnose_stack
+    show_logs "$LOG_SERVICES"
+    exit 0
+  fi
+
+  if [[ $RESET_DONE -eq 1 ]]; then
+    log "Reset complet : arrêt des conteneurs et suppression de data/"
+    $COMPOSE down --remove-orphans || true
+    rm -rf "$ROOT/data"
+  fi
+
+  ensure_generated_secrets
 
   local fresh_postgres=0
   if [[ ! -f "$ROOT/data/postgres/PG_VERSION" ]]; then
     fresh_postgres=1
   fi
 
-  if [[ $fresh_postgres -eq 1 && $reset_done -eq 0 ]]; then
+  if [[ $RESET_DONE -eq 1 ]]; then
+    generate_and_save_postgres_password "reset complet"
+  elif [[ $fresh_postgres -eq 1 ]]; then
     generate_and_save_postgres_password "nouvelle base de données"
   fi
   export_compose_env
+  validate_env
 
   log "Préparation des répertoires de données..."
   mkdir -p "$ROOT/data/postgres" "$ROOT/data/runflow"
@@ -461,7 +604,8 @@ main() {
   verify_api_cors
 
   log "Démarrage de l'interface web..."
-  $COMPOSE up -d --build web
+  $COMPOSE up -d --build --force-recreate web
+  wait_for_web
   ensure_admin
   ensure_worker_credentials
 
@@ -486,9 +630,14 @@ main() {
   echo " Worker : ${WORKER_NAME} (réseau interne → http://api:8000)"
   echo " Données: $ROOT/data/"
   echo ""
-  echo " Logs   : $COMPOSE logs -f api"
-  echo "          : $COMPOSE logs -f worker"
+  print_log_commands
   echo "=============================================="
+
+  if [[ $LOGS_FOLLOW -eq 1 ]]; then
+    echo ""
+    diagnose_stack
+    show_logs "$LOG_SERVICES"
+  fi
 }
 
 main "$@"
