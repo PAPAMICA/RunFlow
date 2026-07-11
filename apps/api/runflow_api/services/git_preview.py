@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 
 from runflow_api.services.git_sync import get_git_worktree
@@ -81,9 +80,8 @@ def build_git_preview(
     """Clone/fetch repo and return preview metadata for the job creation UI."""
     try:
         root = get_git_worktree(git_config)
-    except subprocess.CalledProcessError as exc:
-        stderr = (exc.stderr or b"").decode(errors="replace").strip()
-        raise ValueError(stderr or "Échec du clone Git") from exc
+    except RuntimeError as exc:
+        raise ValueError(str(exc)) from exc
 
     if not root.is_dir():
         raise ValueError("Le dépôt Git ou le sous-dossier configuré est introuvable")

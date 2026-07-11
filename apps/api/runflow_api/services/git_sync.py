@@ -12,9 +12,28 @@ from runflow_api.config import get_settings
 
 logger = logging.getLogger(__name__)
 
+GIT_MISSING_MSG = "Git n'est pas installé dans le conteneur API (rebuild requis)"
+
 
 def _repo_hash(url: str) -> str:
     return hashlib.sha256(url.encode()).hexdigest()[:16]
+
+
+def _run_git(args: list[str], *, cwd: Path | None = None) -> None:
+    try:
+        subprocess.run(
+            ["git", *args],
+            cwd=cwd,
+            check=True,
+            capture_output=True,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError(GIT_MISSING_MSG) from exc
+    except subprocess.CalledProcessError as exc:
+        stderr = (exc.stderr or b"").decode(errors="replace").strip()
+        stdout = (exc.stdout or b"").decode(errors="replace").strip()
+        detail = stderr or stdout or "Commande Git échouée"
+        raise RuntimeError(detail) from exc
 
 
 def get_git_worktree(git_config: dict) -> Path:
@@ -28,11 +47,11 @@ def get_git_worktree(git_config: dict) -> Path:
     cache_dir.mkdir(parents=True, exist_ok=True)
 
     if (cache_dir / ".git").exists():
-        subprocess.run(["git", "fetch", "origin"], cwd=cache_dir, check=True, capture_output=True)
-        subprocess.run(["git", "checkout", branch], cwd=cache_dir, check=True, capture_output=True)
-        subprocess.run(["git", "reset", "--hard", f"origin/{branch}"], cwd=cache_dir, check=True, capture_output=True)
+        _run_git(["fetch", "origin"], cwd=cache_dir)
+        _run_git(["checkout", branch], cwd=cache_dir)
+        _run_git(["reset", "--hard", f"origin/{branch}"], cwd=cache_dir)
     else:
-        subprocess.run(["git", "clone", "--branch", branch, url, str(cache_dir)], check=True, capture_output=True)
+        _run_git(["clone", "--branch", branch, url, str(cache_dir)])
 
     src = cache_dir / subpath if subpath else cache_dir
     return src
