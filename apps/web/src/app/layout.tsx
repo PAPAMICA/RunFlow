@@ -4,6 +4,9 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "RunFlow",
   description: "API-first job automation platform",
+  icons: {
+    icon: "/favicon.svg",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

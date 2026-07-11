@@ -53,7 +53,8 @@ services:
       VALKEY_URL: redis://valkey:6379/0
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       RUNFLOW_MASTER_KEY: ${RUNFLOW_MASTER_KEY:?RUNFLOW_MASTER_KEY is required}
-      CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS is required}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      RUNFLOW_WEB_HOST: ${RUNFLOW_WEB_HOST:-}
       DATA_DIR: /data
       JOBS_DIR: /data/jobs
       RUNS_DIR: /data/runs

@@ -43,6 +43,8 @@ async def _reconciliation_loop() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_logging("api")
+    settings = get_settings()
+    logger.info("CORS allowed origins: %s", settings.cors_origin_list)
     tasks = [
         asyncio.create_task(_reconciliation_loop()),
         asyncio.create_task(scheduler_loop()),

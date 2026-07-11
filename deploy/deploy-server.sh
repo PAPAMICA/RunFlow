@@ -83,6 +83,14 @@ ensure_generated_secrets() {
   if [[ $changed -eq 1 ]]; then
     load_env
   fi
+
+  if [[ -n "${RUNFLOW_WEB_HOST:-}" ]]; then
+    patch_env_var "CORS_ORIGINS" "https://${RUNFLOW_WEB_HOST}"
+  fi
+  if [[ -n "${RUNFLOW_API_HOST:-}" ]]; then
+    patch_env_var "NEXT_PUBLIC_API_URL" "https://${RUNFLOW_API_HOST}"
+  fi
+  load_env
 }
 
 validate_env() {
@@ -90,8 +98,6 @@ validate_env() {
     || die "Configurez RUNFLOW_WEB_HOST dans .env (domaine réel, pas example.com)"
   [[ "${RUNFLOW_API_HOST}" != *example.com* ]] \
     || die "Configurez RUNFLOW_API_HOST dans .env (domaine réel, pas example.com)"
-  [[ -n "${CORS_ORIGINS:-}" ]] || die "Configurez CORS_ORIGINS dans .env"
-  [[ -n "${NEXT_PUBLIC_API_URL:-}" ]] || die "Configurez NEXT_PUBLIC_API_URL dans .env"
 }
 
 wait_for_api() {

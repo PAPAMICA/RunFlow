@@ -38,6 +38,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
       RUNFLOW_MASTER_KEY: ${RUNFLOW_MASTER_KEY:-}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      RUNFLOW_WEB_HOST: ${RUNFLOW_WEB_HOST:-}
       DATA_DIR: /data
       JOBS_DIR: /data/jobs
       RUNS_DIR: /data/runs

@@ -25,13 +25,24 @@ class Settings(BaseSettings):
     runs_dir: str = "/data/runs"
 
     cors_origins: str = "http://localhost:3000"
+    runflow_web_host: str = ""
 
     reconciliation_interval_seconds: int = 30
     worker_offline_threshold_seconds: int = 60
 
     @property
     def cors_origin_list(self) -> list[str]:
-        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+        origins: list[str] = []
+        for raw in self.cors_origins.split(","):
+            origin = raw.strip().rstrip("/")
+            if origin:
+                origins.append(origin)
+        if self.runflow_web_host:
+            host = self.runflow_web_host.strip()
+            for origin in (f"https://{host}", f"http://{host}"):
+                if origin not in origins:
+                    origins.append(origin)
+        return origins or ["http://localhost:3000"]
 
 
 @lru_cache
