@@ -49,26 +49,63 @@ def create_admin(
                 typer.echo(f"User {email} already exists", err=True)
                 raise typer.Exit(1)
 
+            org_result = await session.execute(select(Organization).where(Organization.slug == org_slug))
+            org = org_result.scalar_one_or_none()
+            if org:
+                typer.echo(f"Using existing organization: {org.name} ({org.slug})")
+            else:
+                org = Organization(id=new_ulid(), name=org_name, slug=org_slug)
+                session.add(org)
+                await session.flush()
+
+            project_result = await session.execute(
+                select(Project).where(Project.organization_id == org.id, Project.slug == "default")
+            )
+            if not project_result.scalar_one_or_none():
+                session.add(
+                    Project(
+                        id=new_ulid(),
+                        organization_id=org.id,
+                        name="Default Project",
+                        slug="default",
+                        description="Default project",
+                    )
+                )
+
             user = User(id=new_ulid(), email=email, password_hash=hash_password(password))
-            org = Organization(id=new_ulid(), name=org_name, slug=org_slug)
             member = OrganizationMember(
                 id=new_ulid(),
                 organization_id=org.id,
                 user_id=user.id,
                 role=UserRole.OWNER,
             )
-            project = Project(
-                id=new_ulid(),
-                organization_id=org.id,
-                name="Default Project",
-                slug="default",
-                description="Default project",
-            )
-            session.add_all([user, org, member, project])
+            session.add_all([user, member])
             await session.commit()
             typer.echo(f"Admin user created: {email}")
-            typer.echo(f"Organization: {org_name} ({org_slug})")
-            typer.echo(f"Default project: default")
+            typer.echo(f"Organization: {org.name} ({org.slug})")
+            typer.echo("Default project: default")
+
+    asyncio.run(_run())
+
+
+@app.command("reset-admin-password")
+def reset_admin_password(
+    email: str = typer.Option(..., "--email"),
+    password: str = typer.Option(..., "--password"),
+):
+    """Reset password for an existing user."""
+
+    async def _run():
+        async with async_session_factory() as session:
+            result = await session.execute(select(User).where(User.email == email))
+            user = result.scalar_one_or_none()
+            if not user:
+                typer.echo(f"User {email} not found", err=True)
+                raise typer.Exit(1)
+            user.password_hash = hash_password(password)
+            session.add(user)
+            await session.commit()
+            typer.echo(f"Password updated for {email}")
 
     asyncio.run(_run())
 

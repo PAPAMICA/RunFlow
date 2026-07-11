@@ -5,7 +5,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-COMPOSE="docker compose -f deploy/docker-compose.server.yml"
+COMPOSE_FILE="$ROOT/deploy/docker-compose.server.yml"
+COMPOSE="docker compose --project-directory $ROOT -f $COMPOSE_FILE"
 ENV_FILE="$ROOT/.env"
 WORKER_NAME="${WORKER_NAME:-server}"
 WORKER_DIR="$ROOT/data/worker-${WORKER_NAME}"
@@ -115,10 +116,14 @@ EOF
 wait_for_api() {
   log "Attente de l'API..."
   local i status
-  for i in $(seq 1 60); do
-    status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}unknown{{end}}' runflow_api 2>/dev/null || echo unknown)"
-    if [[ "$status" == "healthy" ]]; then
+  for i in $(seq 1 90); do
+    if $COMPOSE exec -T api curl -sf http://localhost:8000/health >/dev/null 2>&1; then
       log "API prête"
+      return 0
+    fi
+    status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' runflow_api 2>/dev/null || true)"
+    if [[ "$status" == "healthy" ]]; then
+      log "API prête (healthcheck)"
       return 0
     fi
     sleep 2
@@ -135,11 +140,20 @@ ensure_admin() {
       --email "$email" \
       --password "$password" \
       --org-name "Default Organization" \
-      --org-slug default 2>/dev/null; then
+      --org-slug default; then
     log "Administrateur créé"
-  else
-    log "Administrateur déjà existant (ok)"
+    return 0
   fi
+
+  log "Création échouée — tentative de mise à jour du mot de passe..."
+  if $COMPOSE exec -T api runflow reset-admin-password \
+      --email "$email" \
+      --password "$password"; then
+    log "Mot de passe administrateur mis à jour"
+    return 0
+  fi
+
+  die "Impossible de créer ou mettre à jour l'administrateur ${email}"
 }
 
 ensure_worker_credentials() {
