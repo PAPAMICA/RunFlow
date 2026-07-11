@@ -19,6 +19,7 @@ class RunnerType(StrEnum):
     PYTHON = "python"
     BASH = "bash"
     ANSIBLE = "ansible"
+    SSH = "ssh"
     DOCKER = "docker"
     DOCKER_COMPOSE = "docker_compose"
     COMMAND = "command"

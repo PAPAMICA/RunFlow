@@ -26,6 +26,7 @@ from runflow_api.schemas import (
 )
 from runflow_api.services.credentials import resolve_credentials_for_run
 from runflow_api.services.git_auth import resolve_git_config_auth
+from runflow_api.services.inventories import resolve_inventories_for_run
 from runflow_api.services.logs import append_logs
 from runflow_api.services.queue import claim_next_run, transition_run
 from runflow_api.services.secrets import resolve_secrets_for_run
@@ -135,6 +136,15 @@ async def worker_claim(
         secret_refs=job.secret_refs,
     )
     credentials = await resolve_credentials_for_run(session, job.credential_refs)
+
+    inventory_refs: list[str] = []
+    for cfg in (job.ansible_config, job.ssh_config):
+        if cfg:
+            inventory_refs.extend(cfg.get("inventory_refs") or [])
+    # Preserve order while de-duplicating.
+    inventory_refs = list(dict.fromkeys(inventory_refs))
+    resolved_inventories = await resolve_inventories_for_run(session, inventory_refs)
+
     job_payload = {
         "id": job.id,
         "slug": job.slug,
@@ -150,6 +160,8 @@ async def worker_claim(
         "overlay_files": overlay_files,
         "internal_files": internal_files,
         "ansible_config": job.ansible_config,
+        "ssh_config": job.ssh_config,
+        "resolved_inventories": resolved_inventories,
         "secrets": secrets,
         "credentials": credentials,
         "parameters": [

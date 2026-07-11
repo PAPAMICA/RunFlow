@@ -22,6 +22,7 @@ import { DataTable } from "@/components/DataTable";
 import { EmptyState } from "@/components/EmptyState";
 import { ForcedArgumentsEditor } from "@/components/ForcedArgumentsEditor";
 import { JobParametersEditor } from "@/components/JobParametersEditor";
+import { JobRunnerConfigEditor } from "@/components/JobRunnerConfigEditor";
 import { FavoriteButton } from "@/components/FavoriteButton";
 import { JobNotificationsForm } from "@/components/JobNotificationsForm";
 import { JobRunForm } from "@/components/JobRunForm";
@@ -450,6 +451,19 @@ export default function JobDetailPage() {
           </CardContent>
         </Card>
         </div>
+
+        {(job.runner_type === "ansible" || job.runner_type === "ssh") && (
+          <Card>
+            <CardHeader>
+              <CardTitle>
+                {job.runner_type === "ssh" ? "Configuration SSH" : "Configuration Ansible"}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <JobRunnerConfigEditor job={job} onSaved={setJob} />
+            </CardContent>
+          </Card>
+        )}
 
         <Card className="border-destructive/30 max-w-3xl">
           <CardHeader>

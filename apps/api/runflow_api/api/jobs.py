@@ -131,6 +131,11 @@ def _job_to_response(job: Job) -> JobResponse:
         cpu_limit=job.cpu_limit,
         enabled=job.enabled,
         git_config=git_cfg,
+        ansible_config=job.ansible_config,
+        ssh_config=job.ssh_config,
+        credential_refs=job.credential_refs or [],
+        secret_refs=job.secret_refs or [],
+        worker_labels=job.worker_labels or {},
         has_env_file=has_env,
         forced_arguments=job.forced_arguments or {},
         notification_config=JobNotificationConfigResponse(
@@ -273,6 +278,11 @@ async def create_job(
         memory_limit_mb=payload.memory_limit_mb,
         cpu_limit=payload.cpu_limit,
         git_config=git_config_dict,
+        ansible_config=payload.ansible_config.model_dump() if payload.ansible_config else None,
+        ssh_config=payload.ssh_config.model_dump() if payload.ssh_config else None,
+        credential_refs=payload.credential_refs,
+        secret_refs=payload.secret_refs,
+        worker_labels=payload.worker_labels,
         forced_arguments={},
     )
     session.add(job)

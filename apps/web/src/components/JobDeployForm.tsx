@@ -21,12 +21,26 @@ import {
   validateGitAuth,
 } from "@/components/GitAuthSection";
 import { GitPreviewTree } from "@/components/GitPreviewTree";
+import {
+  RunnerConfigFields,
+  emptyAnsibleConfig,
+  emptySshConfig,
+} from "@/components/RunnerConfigFields";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
-import { api, Credential, GitPreviewResponse, JobParameterInput, Project } from "@/lib/api";
+import {
+  api,
+  AnsibleConfig,
+  Credential,
+  GitPreviewResponse,
+  Inventory,
+  JobParameterInput,
+  Project,
+  SshConfig,
+} from "@/lib/api";
 import { envExampleToText } from "@/lib/env-file";
 import { cn } from "@/lib/utils";
 
@@ -36,7 +50,7 @@ export interface JobDeployFormProps {
   onCancel: () => void;
 }
 
-type RunnerType = "python" | "bash" | "ansible";
+type RunnerType = "python" | "bash" | "ansible" | "ssh";
 type SourceType = "internal" | "git";
 
 const RUNNER_OPTIONS: {
@@ -49,7 +63,10 @@ const RUNNER_OPTIONS: {
   { id: "python", label: "Python", icon: FileCode, entry: "main.py", description: "Scripts .py, arguments argparse" },
   { id: "bash", label: "Bash", icon: Terminal, entry: "main.sh", description: "Scripts shell POSIX" },
   { id: "ansible", label: "Ansible", icon: Boxes, entry: "playbook.yml", description: "Playbooks & inventaires" },
+  { id: "ssh", label: "SSH", icon: Terminal, entry: "", description: "Commandes sur hôtes distants" },
 ];
+
+const RUNNER_CONFIG_TYPES = new Set(["ansible", "ssh"]);
 
 const emptyParam = (position = 0): JobParameterInput => ({
   name: "",
@@ -112,6 +129,10 @@ export function JobDeployForm({ projects, onCreated, onCancel }: JobDeployFormPr
   const [gitAuthMode, setGitAuthMode] = useState<GitAuthMode>("token");
   const [gitCredentialId, setGitCredentialId] = useState("");
   const [credentials, setCredentials] = useState<Credential[]>([]);
+  const [inventories, setInventories] = useState<Inventory[]>([]);
+  const [ansibleConfig, setAnsibleConfig] = useState<AnsibleConfig>(emptyAnsibleConfig);
+  const [sshConfig, setSshConfig] = useState<SshConfig>(emptySshConfig);
+  const [credentialRefs, setCredentialRefs] = useState<string[]>([]);
   const [entrypoint, setEntrypoint] = useState("main.py");
   const [envContent, setEnvContent] = useState("");
   const [parameters, setParameters] = useState<JobParameterInput[]>([]);
@@ -123,10 +144,9 @@ export function JobDeployForm({ projects, onCreated, onCancel }: JobDeployFormPr
   const sourceType: SourceType = useGit ? "git" : "internal";
 
   useEffect(() => {
-    if (useGit) {
-      api.getCredentials().then(setCredentials).catch(console.error);
-    }
-  }, [useGit]);
+    api.getCredentials().then(setCredentials).catch(console.error);
+    api.getInventories().then(setInventories).catch(console.error);
+  }, []);
 
   function gitAuthConfig() {
     return buildGitAuthPayload(gitAuthMode, gitUsername, gitToken, gitCredentialId, repoUrl);
@@ -232,6 +252,9 @@ export function JobDeployForm({ projects, onCreated, onCancel }: JobDeployFormPr
         git_config: useGit
           ? { repository_url: repoUrl, branch, path: repoPath, ...gitAuthConfig() }
           : undefined,
+        ansible_config: runnerType === "ansible" ? ansibleConfig : undefined,
+        ssh_config: runnerType === "ssh" ? sshConfig : undefined,
+        credential_refs: RUNNER_CONFIG_TYPES.has(runnerType) ? credentialRefs : undefined,
         env_file_content: envContent.trim() ? envContent : undefined,
         parameters: parameters
           .filter((p) => p.name.trim())
@@ -476,8 +499,34 @@ export function JobDeployForm({ projects, onCreated, onCancel }: JobDeployFormPr
         )}
       </SectionCard>
 
+      {/* 02b — Configuration Ansible / SSH */}
+      {RUNNER_CONFIG_TYPES.has(runnerType) && (
+        <SectionCard
+          step={3}
+          icon={runnerType === "ssh" ? Terminal : Boxes}
+          title={runnerType === "ssh" ? "Configuration SSH" : "Configuration Ansible"}
+          description={
+            runnerType === "ssh"
+              ? "Hôtes, commande distante et credentials"
+              : "Playbook, inventaire, tags et credentials"
+          }
+        >
+          <RunnerConfigFields
+            runnerType={runnerType}
+            ansible={ansibleConfig}
+            onAnsible={(patch) => setAnsibleConfig((c) => ({ ...c, ...patch }))}
+            ssh={sshConfig}
+            onSsh={(patch) => setSshConfig((c) => ({ ...c, ...patch }))}
+            credentialRefs={credentialRefs}
+            onCredentialRefs={setCredentialRefs}
+            credentials={credentials}
+            inventories={inventories}
+          />
+        </SectionCard>
+      )}
+
       {/* 03 — Environnement */}
-      <SectionCard step={3} icon={FileCode} title="Variables d'environnement" description="Injectées à chaque exécution, jamais versionnées dans Git">
+      <SectionCard step={4} icon={FileCode} title="Variables d'environnement" description="Injectées à chaque exécution, jamais versionnées dans Git">
         <EnvEditor
           key={preview?.env_example_path ?? "env"}
           value={envContent}
@@ -486,8 +535,8 @@ export function JobDeployForm({ projects, onCreated, onCancel }: JobDeployFormPr
         />
       </SectionCard>
 
-      {/* 04 — Arguments */}
-      <SectionCard step={4} icon={SlidersHorizontal} title="Arguments" description="Détectés automatiquement depuis argparse / Bash, ou ajoutés à la main">
+      {/* 05 — Arguments */}
+      <SectionCard step={5} icon={SlidersHorizontal} title="Arguments" description="Détectés automatiquement depuis argparse / Bash, ou ajoutés à la main">
         <div className="flex items-center justify-between gap-2">
           <p className="text-xs text-muted-foreground">
             {parameters.length} argument{parameters.length > 1 ? "s" : ""}

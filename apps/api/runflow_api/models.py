@@ -127,6 +127,7 @@ class Job(Base, TimestampMixin):
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     git_config: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     ansible_config: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    ssh_config: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     worker_labels: Mapped[dict[str, str] | None] = mapped_column(JSONB)
     worker_group_id: Mapped[str | None] = mapped_column(String(26))
     worker_id: Mapped[str | None] = mapped_column(String(26))

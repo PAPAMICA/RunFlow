@@ -19,6 +19,12 @@ from runflow_worker.config import get_settings
 from runflow_worker.debug_log import emit_post_run_debug, emit_runner_debug, emit_workspace_debug
 from runflow_worker.docker_paths import resolve_docker_bind_path, self_container_id
 from runflow_worker.runners.base import BaseRunner, RunContext, RunOutput
+from runflow_worker.runners.ssh_tools import (
+    build_ssh_script,
+    pick_ssh_credential,
+    render_remote_command,
+    resolve_ssh_hosts,
+)
 from runflow_shared import RunnerType
 
 
@@ -112,7 +118,8 @@ class DockerExecutor(BaseRunner):
         settings = get_settings()
         if runner_type == RunnerType.BASH:
             return settings.bash_runner_image
-        if runner_type == RunnerType.ANSIBLE:
+        if runner_type in (RunnerType.ANSIBLE, RunnerType.SSH):
+            # The ansible image ships openssh-client + sshpass, reused for SSH.
             return settings.ansible_runner_image
         return settings.python_runner_image
 
@@ -305,7 +312,9 @@ class DockerExecutor(BaseRunner):
                 *build_cli_arguments(ctx.job, ctx.arguments),
             ]
         elif runner_type == RunnerType.ANSIBLE:
-            command = self._ansible_command(ctx)
+            command = self._ansible_command(ctx, ctx.container_root)
+        elif runner_type == RunnerType.SSH:
+            command = self._ssh_command(ctx, ctx.container_root)
         else:
             command = self._python_command(ctx, entrypoint)
 
@@ -409,30 +418,113 @@ class DockerExecutor(BaseRunner):
         except DockerException as exc:
             return RunOutput(exit_code=1, stderr=str(exc))
 
-    def _ansible_command(self, ctx: RunContext) -> list[str]:
-        ansible_cfg = ctx.job.get("ansible_config") or {}
-        playbook = ansible_cfg.get("playbook", "playbook.yml")
-        inventory = ansible_cfg.get("inventory", "inventory")
-        root = ctx.container_root
-        extra_vars_file = f"{root}/input/extra_vars.json"
-        extra_vars_path = Path(ctx.workspace_path) / "input" / "extra_vars.json"
-        extra_vars_path.parent.mkdir(parents=True, exist_ok=True)
-        extra_vars_path.write_text(json.dumps(ctx.arguments), encoding="utf-8")
-
-        # Write SSH key if credential provided
+    def _write_ssh_key(self, ctx: RunContext) -> str | None:
+        """Write the first SSH private key credential to input/ssh_key (0600)."""
         for cred in ctx.job.get("credentials") or []:
-            data = cred.get("data", {})
-            if "private_key" in data:
+            data = cred.get("data") or {}
+            key = data.get("private_key")
+            if key:
                 key_path = Path(ctx.workspace_path) / "input" / "ssh_key"
-                key_path.write_text(data["private_key"], encoding="utf-8")
+                key_path.parent.mkdir(parents=True, exist_ok=True)
+                content = key if key.endswith("\n") else key + "\n"
+                key_path.write_text(content, encoding="utf-8")
                 os.chmod(key_path, 0o600)
+                return str(key_path)
+        return None
 
-        return [
+    def _ansible_command(self, ctx: RunContext, root: str) -> list[str]:
+        ansible_cfg = ctx.job.get("ansible_config") or {}
+        playbook = ansible_cfg.get("playbook") or "playbook.yml"
+        input_dir = Path(ctx.workspace_path) / "input"
+        input_dir.mkdir(parents=True, exist_ok=True)
+
+        # Extra vars = declared extra_vars + run arguments (+ credential user/pw).
+        extra_vars: dict[str, Any] = dict(ansible_cfg.get("extra_vars") or {})
+        extra_vars.update(ctx.arguments)
+        cred = pick_ssh_credential(ctx.job.get("credentials"))
+        if cred:
+            if cred.get("username"):
+                extra_vars.setdefault("ansible_user", cred["username"])
+            if cred.get("password"):
+                extra_vars.setdefault("ansible_password", cred["password"])
+                extra_vars.setdefault("ansible_become_password", cred["password"])
+        extra_vars_path = input_dir / "extra_vars.json"
+        extra_vars_path.write_text(json.dumps(extra_vars), encoding="utf-8")
+
+        # Inventory: prefer internal/resolved content, else fall back to a path
+        # inside the job sources.
+        inventory_arg = f"{root}/job/inventory"
+        content = ansible_cfg.get("inventory_content") or ""
+        if not content and ansible_cfg.get("inventory_source") == "refs":
+            content = "\n".join(
+                inv.get("content", "") for inv in (ctx.job.get("resolved_inventories") or [])
+            )
+        if content.strip():
+            inv_path = input_dir / "inventory"
+            inv_path.write_text(content, encoding="utf-8")
+            inventory_arg = f"{root}/input/inventory"
+
+        # SSH key + ansible env.
+        key_path = self._write_ssh_key(ctx)
+        ctx.env["ANSIBLE_HOST_KEY_CHECKING"] = "False"
+        if key_path:
+            ctx.env["ANSIBLE_PRIVATE_KEY_FILE"] = f"{root}/input/ssh_key"
+
+        cmd = [
             "ansible-playbook",
             f"{root}/job/{playbook}",
-            "-i", f"{root}/job/{inventory}",
-            "-e", f"@{extra_vars_file}",
+            "-i", inventory_arg,
+            "-e", f"@{root}/input/extra_vars.json",
         ]
+        tags = ansible_cfg.get("tags") or []
+        if tags:
+            cmd += ["--tags", ",".join(tags)]
+        skip_tags = ansible_cfg.get("skip_tags") or []
+        if skip_tags:
+            cmd += ["--skip-tags", ",".join(skip_tags)]
+        if ansible_cfg.get("limit"):
+            cmd += ["--limit", str(ansible_cfg["limit"])]
+        if ansible_cfg.get("become"):
+            cmd.append("--become")
+        return cmd
+
+    def _ssh_command(self, ctx: RunContext, root: str) -> list[str]:
+        ssh_cfg = ctx.job.get("ssh_config") or {}
+        input_dir = Path(ctx.workspace_path) / "input"
+        input_dir.mkdir(parents=True, exist_ok=True)
+
+        hosts = resolve_ssh_hosts(
+            ssh_cfg, ctx.job.get("resolved_inventories"), ctx.arguments
+        )
+        remote_cmd = render_remote_command(ssh_cfg.get("command", ""), ctx.arguments)
+        cmd_path = input_dir / "ssh_command.sh"
+        cmd_path.write_text(remote_cmd + "\n", encoding="utf-8")
+
+        cred = pick_ssh_credential(ctx.job.get("credentials"))
+        key_path = self._write_ssh_key(ctx) if cred and cred.get("private_key") else None
+        use_password = bool(cred and cred.get("password") and not key_path)
+        if use_password:
+            ctx.env["SSHPASS"] = str(cred["password"])
+        if cred and cred.get("username") and not ssh_cfg.get("user"):
+            ssh_cfg = {**ssh_cfg, "user": cred["username"]}
+
+        if not hosts:
+            script = 'echo "Aucun hôte SSH résolu" >&2; exit 2'
+        else:
+            script = build_ssh_script(
+                hosts=hosts,
+                user=ssh_cfg.get("user") or "root",
+                port=int(ssh_cfg.get("port") or 22),
+                command_file=f"{root}/input/ssh_command.sh",
+                key_file=f"{root}/input/ssh_key" if key_path else None,
+                use_password=use_password,
+                become=bool(ssh_cfg.get("become")),
+            )
+
+        if ctx.on_system_log:
+            ctx.on_system_log(f"SSH sur {len(hosts)} hôte(s) : {', '.join(hosts) or '(aucun)'}")
+
+        return ["/bin/sh", "-c", script]
 
     async def _execute_local(self, ctx: RunContext) -> RunOutput:
         import subprocess
@@ -440,6 +532,19 @@ class DockerExecutor(BaseRunner):
         job = ctx.job
         workspace = Path(ctx.workspace_path) / "job"
         entrypoint = job.get("resolved_entrypoint") or job.get("entrypoint", "main.py")
+        runner_type = job["runner_type"]
+        local_root = str(Path(ctx.workspace_path))
+
+        # Build the command first: SSH/Ansible builders enrich ctx.env.
+        if runner_type == RunnerType.SSH:
+            cmd = self._ssh_command(ctx, local_root)
+        elif runner_type == RunnerType.ANSIBLE:
+            cmd = self._ansible_command(ctx, local_root)
+        elif runner_type == RunnerType.BASH:
+            cmd = ["bash", str(workspace / entrypoint), *build_cli_arguments(job, ctx.arguments)]
+        else:
+            cmd = ["python3", str(workspace / entrypoint), *build_cli_arguments(job, ctx.arguments)]
+
         env = {**os.environ, **ctx.env}
         env_file = workspace / ".env"
         if env_file.is_file():
@@ -449,12 +554,6 @@ class DockerExecutor(BaseRunner):
                     continue
                 key, _, value = line.partition("=")
                 env[key.strip()] = value.strip().strip('"').strip("'")
-
-        cli_args = build_cli_arguments(job, ctx.arguments)
-        if job["runner_type"] == RunnerType.BASH:
-            cmd = ["bash", str(workspace / entrypoint), *cli_args]
-        else:
-            cmd = ["python3", str(workspace / entrypoint), *cli_args]
 
         if ctx.debug and ctx.on_debug_log:
             import shlex

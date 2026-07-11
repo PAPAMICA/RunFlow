@@ -238,6 +238,28 @@ export interface GitConfig {
   credential_id?: string;
 }
 
+export interface AnsibleConfig {
+  playbook?: string;
+  inventory_source?: "internal" | "refs";
+  inventory_content?: string;
+  inventory_refs?: string[];
+  tags?: string[];
+  skip_tags?: string[];
+  limit?: string;
+  become?: boolean;
+  extra_vars?: Record<string, unknown>;
+}
+
+export interface SshConfig {
+  hosts?: string[];
+  inventory_refs?: string[];
+  hosts_argument?: string | null;
+  user?: string;
+  port?: number;
+  command?: string;
+  become?: boolean;
+}
+
 export interface GitPreviewRequest {
   git_config: GitConfig;
   runner_type?: string;
@@ -296,6 +318,11 @@ export interface Job {
   entrypoint: string;
   enabled: boolean;
   git_config?: GitConfig | null;
+  ansible_config?: AnsibleConfig | null;
+  ssh_config?: SshConfig | null;
+  credential_refs?: string[];
+  secret_refs?: string[];
+  worker_labels?: Record<string, string>;
   has_env_file?: boolean;
   timeout_seconds?: number;
   prevent_concurrent_runs?: boolean;
@@ -325,6 +352,11 @@ export interface JobCreate {
   source_type?: string;
   entrypoint?: string;
   git_config?: GitConfig;
+  ansible_config?: AnsibleConfig;
+  ssh_config?: SshConfig;
+  credential_refs?: string[];
+  secret_refs?: string[];
+  worker_labels?: Record<string, string>;
   env_file_content?: string;
   parameters?: JobParameterInput[];
 }
@@ -343,6 +375,11 @@ export interface JobUpdate {
   network_mode?: string;
   memory_limit_mb?: number;
   cpu_limit?: number;
+  ansible_config?: AnsibleConfig;
+  ssh_config?: SshConfig;
+  credential_refs?: string[];
+  secret_refs?: string[];
+  worker_labels?: Record<string, string>;
   parameters?: JobParameterInput[];
   enabled?: boolean;
   notification_config?: JobNotificationConfig;

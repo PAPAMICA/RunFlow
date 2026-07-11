@@ -70,6 +70,28 @@ class GitConfig(BaseModel):
     credential_id: str | None = None
 
 
+class AnsibleConfig(BaseModel):
+    playbook: str = "playbook.yml"
+    inventory_source: Literal["internal", "refs"] = "internal"
+    inventory_content: str = ""
+    inventory_refs: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+    skip_tags: list[str] = Field(default_factory=list)
+    limit: str = ""
+    become: bool = False
+    extra_vars: dict[str, Any] = Field(default_factory=dict)
+
+
+class SshConfig(BaseModel):
+    hosts: list[str] = Field(default_factory=list)
+    inventory_refs: list[str] = Field(default_factory=list)
+    hosts_argument: str | None = None
+    user: str = "root"
+    port: int = 22
+    command: str = ""
+    become: bool = False
+
+
 class GitPreviewRequest(BaseModel):
     git_config: GitConfig
     runner_type: str = "python"
@@ -107,6 +129,11 @@ class JobCreate(BaseModel):
     memory_limit_mb: int = 512
     cpu_limit: float = 1.0
     git_config: GitConfig | None = None
+    ansible_config: AnsibleConfig | None = None
+    ssh_config: SshConfig | None = None
+    credential_refs: list[str] | None = None
+    secret_refs: list[str] | None = None
+    worker_labels: dict[str, str] | None = None
     env_file_content: str | None = None
     parameters: list[JobParameterCreate] = Field(default_factory=list)
 
@@ -127,6 +154,11 @@ class JobUpdate(BaseModel):
     cpu_limit: float | None = None
     enabled: bool | None = None
     result_parser: str | None = None
+    ansible_config: AnsibleConfig | None = None
+    ssh_config: SshConfig | None = None
+    credential_refs: list[str] | None = None
+    secret_refs: list[str] | None = None
+    worker_labels: dict[str, str] | None = None
     parameters: list[JobParameterCreate] | None = None
     notification_config: "JobNotificationConfig | None" = None
     forced_arguments: dict[str, Any] | None = None
@@ -220,6 +252,11 @@ class JobResponse(BaseModel):
     cpu_limit: float
     enabled: bool
     git_config: GitConfig | None = None
+    ansible_config: AnsibleConfig | None = None
+    ssh_config: SshConfig | None = None
+    credential_refs: list[str] = Field(default_factory=list)
+    secret_refs: list[str] = Field(default_factory=list)
+    worker_labels: dict[str, str] = Field(default_factory=dict)
     has_env_file: bool = False
     forced_arguments: dict[str, Any] = Field(default_factory=dict)
     notification_config: JobNotificationConfigResponse | None = None
