@@ -26,6 +26,8 @@ class WorkerAgent:
         self.client = WorkerAPIClient()
         self.executor = DockerExecutor()
         self._current_runs = 0
+        self._running: dict[str, asyncio.Task] = {}
+        self._cancelled: set[str] = set()
 
     async def start(self) -> None:
         hostname = socket.gethostname()
@@ -57,10 +59,20 @@ class WorkerAgent:
                     claim["job"].get("source_type"),
                 )
                 self._current_runs += 1
-                asyncio.create_task(self._execute_run(claim))
+                run_id = claim["run_id"]
+                task = asyncio.create_task(self._execute_run(claim))
+                self._running[run_id] = task
+                task.add_done_callback(lambda _t, rid=run_id: self._running.pop(rid, None))
         finally:
             heartbeat_task.cancel()
             await self.client.close()
+
+    def _request_cancel(self, run_id: str) -> None:
+        if run_id in self._cancelled:
+            return
+        self._cancelled.add(run_id)
+        logger.info("Annulation demandée pour le run %s", run_id)
+        self.executor.stop_run(run_id)
 
     async def _wait_for_api(self, hostname: str, attempts: int = 60) -> None:
         logger.info("Connexion à l'API %s…", self.settings.api_url)
@@ -79,7 +91,10 @@ class WorkerAgent:
     async def _heartbeat_loop(self, hostname: str) -> None:
         while True:
             try:
-                await self.client.heartbeat(hostname, __version__, self._current_runs)
+                data = await self.client.heartbeat(hostname, __version__, self._current_runs)
+                for run_id in (data or {}).get("cancel_run_ids", []):
+                    if run_id in self._running:
+                        self._request_cancel(run_id)
             except Exception:
                 logger.exception("Heartbeat failed")
             await asyncio.sleep(self.settings.heartbeat_interval)
@@ -191,6 +206,11 @@ class WorkerAgent:
                 for i in range(0, len(log_entries), batch_size):
                     await self.client.push_logs(run_id, log_entries[i : i + batch_size])
 
+            if run_id in self._cancelled:
+                await self._push_system_log(run_id, "Run annulé à la demande de l'utilisateur")
+                await self.client.report_cancelled(run_id)
+                return
+
             await self._push_system_log(run_id, f"Terminé — exit_code={output.exit_code}")
             await self.client.submit_result(
                 run_id,
@@ -205,11 +225,16 @@ class WorkerAgent:
         except Exception as exc:
             logger.exception("Run %s failed", run_id)
             try:
-                await self._push_system_log(run_id, f"Échec : {exc}")
-                await self.client.report_failure(run_id, {"exit_code": 1, "error": str(exc)})
+                if run_id in self._cancelled:
+                    await self._push_system_log(run_id, "Run annulé à la demande de l'utilisateur")
+                    await self.client.report_cancelled(run_id)
+                else:
+                    await self._push_system_log(run_id, f"Échec : {exc}")
+                    await self.client.report_failure(run_id, {"exit_code": 1, "error": str(exc)})
             except Exception:
                 logger.exception("Failed to report failure for %s", run_id)
         finally:
+            self._cancelled.discard(run_id)
             if drain_task is not None:
                 await log_queue.put(None)
                 await drain_task

@@ -57,6 +57,10 @@ export const api = {
 
   getStats: () => request<DashboardStats>("/api/v1/dashboard/stats"),
   getRecentRuns: () => request<Run[]>("/api/v1/dashboard/recent-runs"),
+  cancelRun: (runId: string) =>
+    request<Run>(`/api/v1/runs/${runId}/cancel`, { method: "POST" }),
+  rerunRun: (runId: string) =>
+    request<{ run_id: string; status: string }>(`/api/v1/runs/${runId}/rerun`, { method: "POST" }),
   getJobs: () => request<Job[]>("/api/v1/jobs"),
   getJob: (id: string) => request<Job>(`/api/v1/jobs/${id}`),
   getJobStats: (id: string) => request<JobStats>(`/api/v1/jobs/${id}/stats`),
@@ -130,6 +134,8 @@ export const api = {
     }),
   deleteJobFile: (jobId: string, path: string) =>
     request<void>(`/api/v1/jobs/${jobId}/files/${path}`, { method: "DELETE" }),
+  deleteJob: (id: string) =>
+    request<void>(`/api/v1/jobs/${id}`, { method: "DELETE" }),
 
   getTriggers: () => request<Trigger[]>("/api/v1/triggers"),
   createTrigger: (data: TriggerCreate) =>
@@ -279,6 +285,7 @@ export interface Job {
   git_config?: GitConfig | null;
   has_env_file?: boolean;
   timeout_seconds?: number;
+  prevent_concurrent_runs?: boolean;
   notification_config?: JobNotificationConfig | null;
   forced_arguments?: Record<string, unknown>;
   parameters: JobParameter[];
@@ -313,8 +320,15 @@ export interface JobUpdate {
   description?: string;
   entrypoint?: string;
   source_type?: string;
+  runner_type?: string;
   git_config?: GitConfig;
   env_file_content?: string;
+  timeout_seconds?: number;
+  concurrency_limit?: number;
+  prevent_concurrent_runs?: boolean;
+  network_mode?: string;
+  memory_limit_mb?: number;
+  cpu_limit?: number;
   parameters?: JobParameterInput[];
   enabled?: boolean;
   notification_config?: JobNotificationConfig;
@@ -416,16 +430,32 @@ export function streamRunLogs(
   onStatus: (status: string) => void,
   onDone: () => void
 ): () => void {
-  const token = getToken();
   const controller = new AbortController();
+  let finished = false;
+  let lastSequence = 0;
 
-  (async () => {
+  const sleep = (ms: number) =>
+    new Promise((resolve) => setTimeout(resolve, ms));
+
+  async function connectOnce(): Promise<void> {
+    const token = getToken();
+    const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+    // Resume where we left off so no log is missed after a reconnect.
+    if (lastSequence > 0) headers["Last-Event-ID"] = String(lastSequence);
+
     const res = await fetch(`${API_URL}/api/v1/runs/${runId}/logs/stream`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      headers,
       signal: controller.signal,
     });
+
+    // Client errors (auth/not found) are not recoverable — stop retrying.
+    if (res.status >= 400 && res.status < 500) {
+      finished = true;
+      return;
+    }
     const reader = res.body?.getReader();
-    if (!reader) return;
+    if (!reader) throw new Error("No stream body");
+
     const decoder = new TextDecoder();
     let buffer = "";
 
@@ -439,18 +469,54 @@ export function streamRunLogs(
         const lines = part.split("\n");
         let event = "message";
         let data = "";
+        let eventId = "";
         for (const line of lines) {
-          if (line.startsWith("event: ")) event = line.slice(7);
-          if (line.startsWith("data: ")) data = line.slice(6);
+          if (line.startsWith("event:")) event = line.slice(6).trim();
+          else if (line.startsWith("data:")) data = line.slice(5).trim();
+          else if (line.startsWith("id:")) eventId = line.slice(3).trim();
+          // lines starting with ":" are keep-alive comments — ignored
+        }
+        if (eventId && /^\d+$/.test(eventId)) {
+          lastSequence = Math.max(lastSequence, parseInt(eventId, 10));
         }
         if (!data) continue;
-        const parsed = JSON.parse(data);
-        if (event === "log") onLog(parsed);
-        if (event === "status") onStatus(parsed.status);
-        if (event === "done") onDone();
+        let parsed: { sequence?: number; stream?: string; message?: string; timestamp?: string; status?: string };
+        try {
+          parsed = JSON.parse(data);
+        } catch {
+          continue;
+        }
+        if (event === "log") {
+          if (typeof parsed.sequence === "number") {
+            lastSequence = Math.max(lastSequence, parsed.sequence);
+          }
+          onLog(parsed as { sequence: number; stream: string; message: string; timestamp: string });
+        } else if (event === "status") {
+          if (parsed.status) onStatus(parsed.status);
+        } else if (event === "done") {
+          finished = true;
+          onDone();
+          return;
+        }
       }
+    }
+  }
+
+  (async () => {
+    while (!finished && !controller.signal.aborted) {
+      try {
+        await connectOnce();
+      } catch {
+        if (controller.signal.aborted) return;
+        // network hiccup / proxy closed the connection — reconnect below
+      }
+      if (finished || controller.signal.aborted) return;
+      await sleep(1500);
     }
   })();
 
-  return () => controller.abort();
+  return () => {
+    finished = true;
+    controller.abort();
+  };
 }

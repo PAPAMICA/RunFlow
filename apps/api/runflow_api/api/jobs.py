@@ -6,14 +6,24 @@ import asyncio
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from runflow_api.core.authorization import AuthContext
 from runflow_api.deps import get_auth_context, require_permission
 from runflow_api.db import get_db
-from runflow_api.models import Job, JobFile, JobParameter, Project, Run
+from runflow_api.models import (
+    CallbackAttempt,
+    Job,
+    JobFile,
+    JobParameter,
+    Project,
+    Run,
+    Trigger,
+    WorkflowNode,
+    WorkflowNodeRun,
+)
 from runflow_api.schemas import (
     GitConfig,
     GitPreviewRequest,
@@ -433,6 +443,55 @@ async def update_job(
     await session.flush()
     await session.refresh(job, attribute_names=["parameters", "files"])
     return _job_to_response(job)
+
+
+@router.delete("/jobs/{job_id}", status_code=204)
+async def delete_job(
+    job_id: str,
+    auth: AuthContext = Depends(require_permission("job:write")),
+    session: AsyncSession = Depends(get_db),
+):
+    result = await session.execute(
+        select(Job).where(Job.id == job_id, Job.organization_id == auth.organization_id)
+    )
+    job = result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    wf_count = await session.execute(
+        select(func.count(WorkflowNode.id)).where(WorkflowNode.job_id == job_id)
+    )
+    if wf_count.scalar_one() > 0:
+        raise HTTPException(
+            status_code=409,
+            detail="Ce job est utilisé dans un workflow — retirez-le du workflow avant de le supprimer",
+        )
+
+    source_type = job.source_type
+
+    # run_logs / job_files / job_parameters are removed via ON DELETE CASCADE.
+    # callback_attempts and workflow_node_runs reference runs without cascade.
+    run_ids_subq = select(Run.id).where(Run.job_id == job_id)
+    await session.execute(
+        delete(CallbackAttempt).where(CallbackAttempt.run_id.in_(run_ids_subq))
+    )
+    await session.execute(
+        delete(WorkflowNodeRun).where(WorkflowNodeRun.run_id.in_(run_ids_subq))
+    )
+    await session.execute(delete(Run).where(Run.job_id == job_id))
+    await session.execute(
+        delete(Trigger).where(Trigger.target_type == "job", Trigger.target_id == job_id)
+    )
+    await session.delete(job)
+    await session.flush()
+
+    if source_type == "internal":
+        try:
+            JobFileStorage().delete_path(job_id, "")
+        except Exception:
+            logger.warning("Nettoyage des fichiers du job %s échoué", job_id)
+
+    return None
 
 
 @router.get("/jobs/{job_id}/files", response_model=list[JobFileNode])

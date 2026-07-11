@@ -13,6 +13,7 @@ import {
   Play,
   Save,
   Timer,
+  Trash2,
 } from "lucide-react";
 import { AskAIPanel } from "@/components/AskAIPanel";
 import { AppShell } from "@/components/AppShell";
@@ -63,10 +64,25 @@ export default function JobDetailPage() {
   const [entrypoint, setEntrypoint] = useState("main.py");
   const [envContent, setEnvContent] = useState("");
 
+  const [editName, setEditName] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editTimeout, setEditTimeout] = useState(300);
+  const [editEnabled, setEditEnabled] = useState(true);
+  const [editPreventConcurrent, setEditPreventConcurrent] = useState(false);
+
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
   function loadJob() {
     api.getJob(id).then((j) => {
       setJob(j);
       setEntrypoint(j.entrypoint);
+      setEditName(j.name);
+      setEditDescription(j.description ?? "");
+      setEditTimeout(j.timeout_seconds ?? 300);
+      setEditEnabled(j.enabled);
+      setEditPreventConcurrent(Boolean(j.prevent_concurrent_runs));
       if (j.git_config) {
         setRepoUrl(j.git_config.repository_url);
         setBranch(j.git_config.branch ?? "main");
@@ -113,6 +129,11 @@ export default function JobDetailPage() {
     setSaveMsg("");
     try {
       const updated = await api.updateJob(id, {
+        name: editName.trim() || job.name,
+        description: editDescription,
+        timeout_seconds: editTimeout,
+        enabled: editEnabled,
+        prevent_concurrent_runs: editPreventConcurrent,
         entrypoint,
         git_config: job.source_type === "git"
           ? { repository_url: repoUrl, branch, path: repoPath }
@@ -125,6 +146,18 @@ export default function JobDetailPage() {
       setSaveMsg(err instanceof Error ? err.message : "Erreur");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleDelete() {
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      await api.deleteJob(id);
+      router.push("/jobs");
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Erreur de suppression");
+      setDeleting(false);
     }
   }
 
@@ -164,7 +197,7 @@ export default function JobDetailPage() {
 
   const tabs: { key: Tab; label: string; icon?: typeof Bell; badge?: string | number }[] = [
     { key: "overview", label: "Vue d'ensemble" },
-    { key: "source", label: "Source & .env" },
+    { key: "source", label: "Configuration" },
     { key: "code", label: "Code" },
     { key: "parameters", label: "Paramètres", badge: job.parameters.length || undefined },
     { key: "notifications", label: "Notifications", icon: Bell },
@@ -306,7 +339,60 @@ export default function JobDetailPage() {
       )}
 
       {tab === "source" && (
-        <Card className="max-w-2xl">
+        <div className="max-w-2xl space-y-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Général</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label>Nom</Label>
+              <Input value={editName} onChange={(e) => setEditName(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>Description</Label>
+              <Textarea
+                value={editDescription}
+                onChange={(e) => setEditDescription(e.target.value)}
+                className="min-h-[70px]"
+                placeholder="À quoi sert ce job ?"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Timeout (secondes)</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={editTimeout}
+                  onChange={(e) => setEditTimeout(Number(e.target.value) || 0)}
+                />
+              </div>
+              <div className="flex flex-col justify-end gap-3 pb-1">
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={editEnabled}
+                    onChange={(e) => setEditEnabled(e.target.checked)}
+                    className="h-4 w-4 accent-[var(--primary)]"
+                  />
+                  Job actif
+                </label>
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={editPreventConcurrent}
+                    onChange={(e) => setEditPreventConcurrent(e.target.checked)}
+                    className="h-4 w-4 accent-[var(--primary)]"
+                  />
+                  Empêcher les exécutions simultanées
+                </label>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
           <CardHeader>
             <CardTitle>Source & variables d&apos;environnement</CardTitle>
           </CardHeader>
@@ -356,6 +442,39 @@ export default function JobDetailPage() {
             </div>
           </CardContent>
         </Card>
+
+        <Card className="border-destructive/30">
+          <CardHeader>
+            <CardTitle className="text-destructive">Zone de danger</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              La suppression d&apos;un job efface définitivement sa configuration, ses fichiers,
+              ses paramètres et son historique d&apos;exécutions. Cette action est irréversible.
+            </p>
+            {deleteError && (
+              <p className="text-sm text-destructive bg-destructive/10 rounded-lg px-3 py-2">{deleteError}</p>
+            )}
+            {confirmDelete ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-medium">Confirmer la suppression de « {job.name} » ?</span>
+                <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
+                  <Trash2 className="h-4 w-4" />
+                  {deleting ? "Suppression…" : "Oui, supprimer"}
+                </Button>
+                <Button variant="outline" onClick={() => setConfirmDelete(false)} disabled={deleting}>
+                  Annuler
+                </Button>
+              </div>
+            ) : (
+              <Button variant="destructive" onClick={() => setConfirmDelete(true)}>
+                <Trash2 className="h-4 w-4" />
+                Supprimer ce job
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+        </div>
       )}
 
       {tab === "code" && (

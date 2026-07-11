@@ -23,13 +23,14 @@ from runflow_api.db import async_session_factory, get_db
 from runflow_api.models import Job, Run
 from runflow_api.schemas import RunCreateRequest, RunQueuedResponse, RunResponse
 from runflow_api.services.logs import get_logs_after
-from runflow_api.services.queue import enqueue_run
+from runflow_api.services.queue import enqueue_run, transition_run
 from runflow_api.services.valkey import (
     RUN_LOG_CHANNEL_PREFIX,
     RUN_STATUS_CHANNEL_PREFIX,
     get_valkey,
+    publish_run_status,
 )
-from runflow_api.utils import new_ulid
+from runflow_api.utils import new_ulid, utcnow
 from runflow_shared import RunStatus, TriggerType
 
 router = APIRouter(tags=["runs"])
@@ -91,6 +92,103 @@ async def get_run(
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
     return _run_to_response(run)
+
+
+@router.post("/runs/{run_id}/cancel", response_model=RunResponse)
+async def cancel_run(
+    run_id: str,
+    auth: AuthContext = Depends(require_permission("job:run")),
+    session: AsyncSession = Depends(get_db),
+):
+    result = await session.execute(
+        select(Run).where(Run.id == run_id, Run.organization_id == auth.organization_id)
+    )
+    run = result.scalar_one_or_none()
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if is_terminal(run.status):
+        raise HTTPException(status_code=409, detail="Run already finished")
+
+    if run.status == RunStatus.QUEUED:
+        # Not yet claimed by a worker — cancel immediately.
+        await transition_run(session, run, RunStatus.CANCELLED, error="Annulé avant exécution")
+    else:
+        # Claimed/running — request cooperative cancellation; the worker picks
+        # this up via its heartbeat and stops the runner container.
+        run.cancel_requested_at = utcnow()
+        session.add(run)
+        await session.flush()
+        await publish_run_status(run.id, run.status)
+    await session.commit()
+    await session.refresh(run)
+    return _run_to_response(run)
+
+
+@router.post("/runs/{run_id}/rerun", response_model=RunQueuedResponse)
+async def rerun_run(
+    run_id: str,
+    response: Response,
+    auth: AuthContext = Depends(require_permission("job:run")),
+    session: AsyncSession = Depends(get_db),
+):
+    result = await session.execute(
+        select(Run).where(Run.id == run_id, Run.organization_id == auth.organization_id)
+    )
+    source = result.scalar_one_or_none()
+    if not source:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    job_result = await session.execute(
+        select(Job).where(Job.id == source.job_id).options(selectinload(Job.parameters))
+    )
+    job = job_result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if not job.enabled:
+        raise HTTPException(status_code=400, detail="Job is disabled")
+    if not auth.can_run_job(job.id, job.project_id):
+        raise HTTPException(status_code=403, detail="Not allowed to run this job")
+
+    if job.prevent_concurrent_runs:
+        active = await session.execute(
+            select(func.count(Run.id)).where(
+                Run.job_id == job.id,
+                Run.status.in_(
+                    [
+                        RunStatus.QUEUED,
+                        RunStatus.ASSIGNED,
+                        RunStatus.PREPARING,
+                        RunStatus.RUNNING,
+                    ]
+                ),
+            )
+        )
+        if active.scalar_one() > 0:
+            raise HTTPException(status_code=409, detail="Job already has an active run")
+
+    try:
+        validated_args = validate_job_arguments(
+            job.parameters,
+            dict(source.arguments or {}),
+            forced_arguments=job.forced_arguments or {},
+        )
+    except ParameterValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors) from exc
+
+    trigger_type = TriggerType.API if auth.api_key_id else TriggerType.MANUAL
+    run = Run(
+        id=new_ulid(),
+        organization_id=auth.organization_id,
+        job_id=job.id,
+        trigger_type=trigger_type,
+        trigger_id=auth.api_key_id or auth.user_id,
+        arguments=validated_args,
+        debug=bool(source.debug),
+    )
+    await enqueue_run(session, run)
+    await session.commit()
+    response.status_code = 202
+    return RunQueuedResponse(run_id=run.id, status=run.status)
 
 
 @router.post("/jobs/{job_slug}/run", response_model=RunQueuedResponse | RunResponse)
@@ -212,6 +310,7 @@ async def stream_run_logs(
         pubsub = client.pubsub()
         await pubsub.subscribe(f"{RUN_LOG_CHANNEL_PREFIX}{run_id}", f"{RUN_STATUS_CHANNEL_PREFIX}{run_id}")
 
+        last_ping = time.monotonic()
         try:
             while True:
                 message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
@@ -228,7 +327,19 @@ async def stream_run_logs(
                         if is_terminal(data.get("status", "")):
                             yield f"event: done\ndata: {json.dumps(data)}\n\n"
                             break
-                await session.refresh(run)
+                    last_ping = time.monotonic()
+                else:
+                    # Keep the connection alive through idle periods so proxies
+                    # (nginx, load balancers) don't drop it during long steps.
+                    if time.monotonic() - last_ping >= 15:
+                        yield ": ping\n\n"
+                        last_ping = time.monotonic()
+
+                try:
+                    await session.refresh(run)
+                except Exception:
+                    # Never let a transient DB hiccup kill the stream.
+                    pass
                 if is_terminal(run.status):
                     yield f"event: done\ndata: {json.dumps({'status': run.status})}\n\n"
                     break

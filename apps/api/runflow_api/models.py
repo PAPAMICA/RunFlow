@@ -206,6 +206,7 @@ class Run(Base, TimestampMixin):
     arguments: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     debug: Mapped[bool] = mapped_column(default=False)
     status: Mapped[str] = mapped_column(String(32), default=RunStatus.QUEUED)
+    cancel_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     queued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     assigned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

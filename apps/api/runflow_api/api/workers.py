@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from runflow_api.core.result_parser import ResultParseError, parse_result
+from runflow_api.core.run_state import is_terminal
 from runflow_api.core.secret_redaction import SecretRedactor
 from runflow_api.deps import get_worker
 from runflow_api.db import get_db
@@ -78,7 +79,18 @@ async def worker_heartbeat(
     worker.current_runs = max(worker.current_runs, payload.current_runs)
     session.add(worker)
     await session.flush()
-    return {"status": "ok"}
+
+    cancel_rows = await session.execute(
+        select(Run.id).where(
+            Run.worker_id == worker.id,
+            Run.cancel_requested_at.is_not(None),
+            Run.status.in_(
+                [RunStatus.ASSIGNED, RunStatus.PREPARING, RunStatus.RUNNING]
+            ),
+        )
+    )
+    cancel_run_ids = list(cancel_rows.scalars().all())
+    return {"status": "ok", "cancel_run_ids": cancel_run_ids}
 
 
 @router.post("/claim", response_model=WorkerRunPayload | None)
@@ -197,6 +209,9 @@ async def worker_submit_result(
     run = result.scalar_one_or_none()
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
+    if is_terminal(run.status):
+        # Already cancelled/failed (e.g. by reaper or user) — ignore late result.
+        return {"status": run.status}
 
     job = run.job
     parsed_result = None
@@ -243,6 +258,8 @@ async def worker_report_failure(
     run = result.scalar_one_or_none()
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
+    if is_terminal(run.status):
+        return {"status": run.status}
 
     await transition_run(
         session,
@@ -250,5 +267,27 @@ async def worker_report_failure(
         RunStatus.FAILED,
         exit_code=payload.exit_code,
         error=payload.error or "Worker reported failure",
+    )
+    return {"status": run.status}
+
+
+@router.post("/runs/{run_id}/cancelled")
+async def worker_report_cancelled(
+    run_id: str,
+    worker: Worker = Depends(get_worker),
+    session: AsyncSession = Depends(get_db),
+):
+    result = await session.execute(select(Run).where(Run.id == run_id, Run.worker_id == worker.id))
+    run = result.scalar_one_or_none()
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if is_terminal(run.status):
+        return {"status": run.status}
+
+    await transition_run(
+        session,
+        run,
+        RunStatus.CANCELLED,
+        error="Annulé par l'utilisateur",
     )
     return {"status": run.status}

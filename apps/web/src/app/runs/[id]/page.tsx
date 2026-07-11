@@ -2,15 +2,17 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
+  Ban,
   Bug,
   Clock,
   Copy,
   ExternalLink,
   GitBranch,
   RefreshCw,
+  RotateCw,
   Terminal,
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
@@ -48,12 +50,16 @@ function formatTrigger(type: string) {
 
 export default function RunDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
   const [run, setRun] = useState<Run | null>(null);
   const [job, setJob] = useState<Job | null>(null);
   const [logs, setLogs] = useState<Parameters<typeof RunLogViewer>[0]["logs"]>([]);
   const [search, setSearch] = useState("");
   const [copied, setCopied] = useState(false);
+  const [copiedCurl, setCopiedCurl] = useState(false);
   const [sideTab, setSideTab] = useState<SideTab>("details");
+  const [busy, setBusy] = useState<"cancel" | "rerun" | null>(null);
+  const [actionError, setActionError] = useState("");
 
   useEffect(() => {
     api.getRun(id).then((r) => {
@@ -83,6 +89,49 @@ export default function RunDetailPage() {
     navigator.clipboard.writeText(id);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  }
+
+  async function handleCancel() {
+    setBusy("cancel");
+    setActionError("");
+    try {
+      const updated = await api.cancelRun(id);
+      setRun(updated);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Erreur d'annulation");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function handleRerun() {
+    setBusy("rerun");
+    setActionError("");
+    try {
+      const res = await api.rerunRun(id);
+      router.push(`/runs/${res.run_id}`);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Erreur de relance");
+      setBusy(null);
+    }
+  }
+
+  function buildCurl(): string {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+    const slug = job?.slug ?? "<job-slug>";
+    const body = JSON.stringify({ arguments: run?.arguments ?? {}, debug: Boolean(run?.debug) });
+    return [
+      `curl -X POST '${apiUrl}/api/v1/jobs/${slug}/run' \\`,
+      `  -H 'Authorization: Bearer <API_KEY>' \\`,
+      `  -H 'Content-Type: application/json' \\`,
+      `  -d '${body}'`,
+    ].join("\n");
+  }
+
+  function copyCurl() {
+    navigator.clipboard.writeText(buildCurl());
+    setCopiedCurl(true);
+    setTimeout(() => setCopiedCurl(false), 2000);
   }
 
   if (!run) {
@@ -165,13 +214,16 @@ export default function RunDetailPage() {
               <Copy className="h-3.5 w-3.5" />
               {copied ? "Copié" : id.slice(0, 10) + "…"}
             </Button>
-            {job && (
-              <Link href={`/jobs/${job.id}?tab=run`}>
-                <Button variant="outline" size="sm">
-                  <ExternalLink className="h-3.5 w-3.5" />
-                  Relancer
-                </Button>
-              </Link>
+            {isLive ? (
+              <Button variant="destructive" size="sm" onClick={handleCancel} disabled={busy !== null}>
+                <Ban className="h-3.5 w-3.5" />
+                {busy === "cancel" ? "Annulation…" : "Annuler"}
+              </Button>
+            ) : (
+              <Button size="sm" onClick={handleRerun} disabled={busy !== null}>
+                <RotateCw className={cn("h-3.5 w-3.5", busy === "rerun" && "animate-spin")} />
+                {busy === "rerun" ? "Relance…" : "Relancer"}
+              </Button>
             )}
             {isLive && (
               <Button
@@ -185,6 +237,10 @@ export default function RunDetailPage() {
             )}
           </div>
         </div>
+
+        {actionError && (
+          <p className="text-xs text-destructive bg-destructive/10 rounded-lg px-3 py-2">{actionError}</p>
+        )}
 
         {/* Barre de métriques */}
         <div
@@ -256,6 +312,21 @@ export default function RunDetailPage() {
                   ) : (
                     <p className="text-xs text-muted-foreground">Aucun argument.</p>
                   )}
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-xs text-muted-foreground">Reproduire via API</p>
+                      <button
+                        onClick={copyCurl}
+                        className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                      >
+                        <Copy className="h-3 w-3" />
+                        {copiedCurl ? "Copié" : "Copier"}
+                      </button>
+                    </div>
+                    <pre className="text-[11px] font-mono bg-black/30 rounded-lg p-3 overflow-auto max-h-48 whitespace-pre-wrap break-all">
+                      {buildCurl()}
+                    </pre>
+                  </div>
                   {job && (
                     <Link
                       href={`/jobs/${job.id}`}

@@ -115,9 +115,15 @@ class JobUpdate(BaseModel):
     description: str | None = None
     entrypoint: str | None = None
     source_type: str | None = None
+    runner_type: str | None = None
     git_config: GitConfig | None = None
     env_file_content: str | None = None
     timeout_seconds: int | None = None
+    concurrency_limit: int | None = None
+    prevent_concurrent_runs: bool | None = None
+    network_mode: str | None = None
+    memory_limit_mb: int | None = None
+    cpu_limit: float | None = None
     enabled: bool | None = None
     result_parser: str | None = None
     parameters: list[JobParameterCreate] | None = None

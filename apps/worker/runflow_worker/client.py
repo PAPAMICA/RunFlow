@@ -23,11 +23,15 @@ class WorkerAPIClient:
     async def close(self) -> None:
         await self._client.aclose()
 
-    async def heartbeat(self, hostname: str, version: str, current_runs: int) -> None:
-        await self._client.post(
+    async def heartbeat(self, hostname: str, version: str, current_runs: int) -> dict[str, Any]:
+        response = await self._client.post(
             "/heartbeat",
             json={"hostname": hostname, "version": version, "current_runs": current_runs},
         )
+        try:
+            return response.json() if response.content else {}
+        except Exception:
+            return {}
 
     async def claim(self) -> dict[str, Any] | None:
         response = await self._client.post("/claim", timeout=30.0)
@@ -47,3 +51,6 @@ class WorkerAPIClient:
 
     async def report_failure(self, run_id: str, payload: dict) -> None:
         await self._client.post(f"/runs/{run_id}/fail", json=payload)
+
+    async def report_cancelled(self, run_id: str) -> None:
+        await self._client.post(f"/runs/{run_id}/cancelled")

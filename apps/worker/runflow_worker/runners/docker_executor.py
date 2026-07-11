@@ -24,12 +24,34 @@ from runflow_shared import RunnerType
 class DockerExecutor(BaseRunner):
     def __init__(self):
         self._client: docker.DockerClient | None = None
-        self._container = None
+        # Per-run handles so concurrent runs don't clobber each other and can be
+        # cancelled individually.
+        self._containers: dict[str, Any] = {}
+        self._procs: dict[str, Any] = {}
 
     def _get_client(self) -> docker.DockerClient:
         if self._client is None:
             self._client = docker.from_env()
         return self._client
+
+    def stop_run(self, run_id: str) -> bool:
+        """Best-effort stop of a running container/process for cancellation."""
+        stopped = False
+        container = self._containers.get(run_id)
+        if container is not None:
+            try:
+                container.kill()
+                stopped = True
+            except Exception:
+                pass
+        proc = self._procs.get(run_id)
+        if proc is not None:
+            try:
+                proc.kill()
+                stopped = True
+            except Exception:
+                pass
+        return stopped
 
     def _runner_image(self, runner_type: str) -> str:
         settings = get_settings()
@@ -240,7 +262,7 @@ class DockerExecutor(BaseRunner):
             )
 
         try:
-            self._container = client.containers.run(
+            container = client.containers.run(
                 image=image,
                 command=command,
                 environment=ctx.env,
@@ -252,14 +274,14 @@ class DockerExecutor(BaseRunner):
                 working_dir=f"{ctx.container_root}/job",
                 **run_kwargs,
             )
+            self._containers[ctx.run_id] = container
 
             stdout_chunks: list[str] = []
             stderr_chunks: list[str] = []
             log_entries: list[dict] = []
 
             def _collect_logs():
-                assert self._container is not None
-                for line in self._container.logs(stream=True, follow=True):
+                for line in container.logs(stream=True, follow=True):
                     text = line.decode("utf-8", errors="replace")
                     if text.endswith("\n"):
                         text = text[:-1]
@@ -277,11 +299,11 @@ class DockerExecutor(BaseRunner):
 
             try:
                 result = await asyncio.wait_for(
-                    asyncio.to_thread(self._container.wait),
+                    asyncio.to_thread(container.wait),
                     timeout=timeout,
                 )
             except asyncio.TimeoutError:
-                self._container.kill()
+                container.kill()
                 log_task.cancel()
                 try:
                     await log_task
@@ -384,6 +406,7 @@ class DockerExecutor(BaseRunner):
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
+        self._procs[ctx.run_id] = proc
         stdout, stderr = await proc.communicate()
         stdout_text = stdout.decode()
         stderr_text = stderr.decode()
@@ -414,9 +437,10 @@ class DockerExecutor(BaseRunner):
         return output
 
     async def cleanup(self, ctx: RunContext) -> None:
-        if self._container is not None:
+        self._procs.pop(ctx.run_id, None)
+        container = self._containers.pop(ctx.run_id, None)
+        if container is not None:
             try:
-                self._container.remove(force=True)
+                container.remove(force=True)
             except Exception:
                 pass
-            self._container = None
