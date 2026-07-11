@@ -9,8 +9,7 @@ COMPOSE_FILE="$ROOT/deploy/docker-compose.server.yml"
 ENV_FILE="$ROOT/.env"
 COMPOSE="docker compose --project-directory $ROOT -f $COMPOSE_FILE --env-file $ENV_FILE"
 POSTGRES_CONTAINER="${POSTGRES_CONTAINER:-runflow_postgres}"
-POSTGRES_HOST="${POSTGRES_HOST:-runflow_postgres}"
-INTERNAL_NETWORK="${INTERNAL_NETWORK:-runflow_internal}"
+POSTGRES_HOST="${POSTGRES_HOST:-$POSTGRES_CONTAINER}"
 WORKER_NAME="${WORKER_NAME:-server}"
 WORKER_DIR="$ROOT/data/worker-${WORKER_NAME}"
 WORKER_ENV="$WORKER_DIR/worker.env"
@@ -44,37 +43,45 @@ export_compose_env() {
   load_env
   export POSTGRES_USER="${POSTGRES_USER:-runflow}"
   export POSTGRES_DB="${POSTGRES_DB:-runflow}"
-  export POSTGRES_HOST="${POSTGRES_HOST:-runflow_postgres}"
+  export POSTGRES_HOST="${POSTGRES_CONTAINER}"
   export POSTGRES_PORT="${POSTGRES_PORT:-5432}"
   export POSTGRES_PASSWORD
   export JWT_SECRET RUNFLOW_MASTER_KEY
+}
+
+postgres_container_network() {
+  docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{"\n"}}{{end}}' "$POSTGRES_CONTAINER" | head -1
+}
+
+docker_run_api() {
+  export_compose_env
+  local network
+  network="$(postgres_container_network)"
+  [[ -n "$network" ]] || die "Réseau Docker introuvable pour ${POSTGRES_CONTAINER}"
+  docker run --rm \
+    --network "$network" \
+    -e "POSTGRES_HOST=${POSTGRES_CONTAINER}" \
+    -e "POSTGRES_PORT=${POSTGRES_PORT}" \
+    -e "POSTGRES_USER=${POSTGRES_USER}" \
+    -e "POSTGRES_PASSWORD=${POSTGRES_PASSWORD}" \
+    -e "POSTGRES_DB=${POSTGRES_DB}" \
+    -e "PYTHONPATH=/app/apps/api" \
+    runflow/api:0.1.0 \
+    "$@"
 }
 
 generate_and_save_postgres_password() {
   local reason="${1:-initialisation}"
   POSTGRES_PASSWORD="$(generate_secret)"
   patch_env_var "POSTGRES_PASSWORD" "$POSTGRES_PASSWORD"
-  patch_env_var "POSTGRES_HOST" "${POSTGRES_HOST:-runflow_postgres}"
+  patch_env_var "POSTGRES_HOST" "${POSTGRES_CONTAINER}"
   export_compose_env
   log "POSTGRES_PASSWORD généré (${reason})"
   echo ""
-  echo "    Postgres : ${POSTGRES_USER}@${POSTGRES_HOST}/${POSTGRES_DB}"
+  echo "    Postgres : ${POSTGRES_USER}@${POSTGRES_CONTAINER}/${POSTGRES_DB}"
   echo "    Conteneur: ${POSTGRES_CONTAINER}"
   echo "    Mot de passe : ${POSTGRES_PASSWORD}"
   echo ""
-}
-
-compose_run_api() {
-  export_compose_env
-  $COMPOSE run --rm --no-deps \
-    --network "$INTERNAL_NETWORK" \
-    -e "POSTGRES_HOST=${POSTGRES_HOST}" \
-    -e "POSTGRES_PORT=${POSTGRES_PORT}" \
-    -e "POSTGRES_USER=${POSTGRES_USER}" \
-    -e "POSTGRES_PASSWORD=${POSTGRES_PASSWORD}" \
-    -e "POSTGRES_DB=${POSTGRES_DB}" \
-    --entrypoint "" \
-    api "$@"
 }
 
 ensure_env_file() {
@@ -222,11 +229,11 @@ run_db_migrations() {
   fi
 
   log "Application des migrations Alembic (one-shot, avant démarrage API)..."
-  log "Cible : ${POSTGRES_USER}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB} (conteneur ${POSTGRES_CONTAINER})"
+  log "Cible : ${POSTGRES_USER}@${POSTGRES_CONTAINER}:${POSTGRES_PORT}/${POSTGRES_DB}"
 
-  if ! compose_run_api /app/.venv/bin/alembic upgrade head; then
+  if ! docker_run_api /app/.venv/bin/alembic upgrade head; then
     log "Diagnostic configuration API :"
-    compose_run_api /app/.venv/bin/python -c \
+    docker_run_api /app/.venv/bin/python -c \
       "from runflow_api.config import get_settings; s=get_settings(); print('host=', s.postgres_host, 'db=', s.postgres_db, 'password_set=', bool(s.postgres_password))" \
       || true
     die "Les migrations Alembic ont échoué"
@@ -253,8 +260,8 @@ sync_postgres_password() {
 }
 
 verify_postgres_tcp_auth() {
-  log "Vérification authentification Postgres (TCP → ${POSTGRES_HOST})..."
-  if compose_run_api /app/.venv/bin/python -c "
+  log "Vérification authentification Postgres (TCP → ${POSTGRES_CONTAINER})..."
+  if docker_run_api /app/.venv/bin/python -c "
 import asyncio
 import os
 import sys
@@ -280,7 +287,7 @@ except Exception as exc:
     print(f'FAIL: {exc}', file=sys.stderr)
     raise SystemExit(1)
 "; then
-    log "Authentification Postgres OK (${POSTGRES_HOST})"
+    log "Authentification Postgres OK (${POSTGRES_CONTAINER})"
     return 0
   fi
   return 1
