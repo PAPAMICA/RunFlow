@@ -402,7 +402,11 @@ export default function JobDetailPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Source & variables d&apos;environnement</CardTitle>
+            <CardTitle>
+              {job.runner_type === "ssh"
+                ? "Enregistrement"
+                : "Source & variables d'environnement"}
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             {job.source_type === "git" && (
@@ -423,24 +427,39 @@ export default function JobDetailPage() {
                 </div>
               </>
             )}
-            <div className="space-y-2">
-              <Label>Script Python (entrypoint)</Label>
-              <Input value={entrypoint} onChange={(e) => setEntrypoint(e.target.value)} />
-              {job.source_type === "git" && repoPath && (
-                <p className="text-xs text-muted-foreground">
-                  Relatif au sous-dossier « {repoPath} » — ex. <code className="font-mono">sync_migrations.py</code>, pas <code className="font-mono">{repoPath}/sync_migrations.py</code>
-                </p>
-              )}
-            </div>
-            <div className="space-y-2">
-              <Label>Fichier .env (injecté à chaque exécution)</Label>
-              <Textarea
-                value={envContent}
-                onChange={(e) => setEnvContent(e.target.value)}
-                className="font-mono text-xs min-h-[140px]"
-                placeholder="KEY=value"
-              />
-            </div>
+            {job.runner_type !== "ssh" && job.runner_type !== "ansible" && (
+              <div className="space-y-2">
+                <Label>{job.runner_type === "bash" ? "Script Bash (entrypoint)" : "Script Python (entrypoint)"}</Label>
+                <Input value={entrypoint} onChange={(e) => setEntrypoint(e.target.value)} />
+                {job.source_type === "git" && repoPath && (
+                  <p className="text-xs text-muted-foreground">
+                    Relatif au sous-dossier « {repoPath} » — ex. <code className="font-mono">sync_migrations.py</code>, pas <code className="font-mono">{repoPath}/sync_migrations.py</code>
+                  </p>
+                )}
+              </div>
+            )}
+            {job.runner_type === "ansible" && (
+              <p className="text-xs text-muted-foreground">
+                Le playbook et l&apos;inventaire se configurent dans la section « Configuration Ansible » ci-dessous.
+              </p>
+            )}
+            {job.runner_type === "ssh" && (
+              <p className="text-xs text-muted-foreground">
+                Aucune source de code — ce job exécute une commande distante. Les hôtes, la commande et les
+                credentials se configurent dans la section « Configuration SSH » ci-dessous.
+              </p>
+            )}
+            {job.runner_type !== "ssh" && (
+              <div className="space-y-2">
+                <Label>Fichier .env (injecté à chaque exécution)</Label>
+                <Textarea
+                  value={envContent}
+                  onChange={(e) => setEnvContent(e.target.value)}
+                  className="font-mono text-xs min-h-[140px]"
+                  placeholder="KEY=value"
+                />
+              </div>
+            )}
             <div className="flex items-center gap-3">
               <Button onClick={saveSource} disabled={saving}>
                 <Save className="h-4 w-4" />

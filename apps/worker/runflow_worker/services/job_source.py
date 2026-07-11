@@ -7,7 +7,7 @@ import shutil
 from collections.abc import Callable
 from pathlib import Path
 
-from runflow_shared import SourceType
+from runflow_shared import RunnerType, SourceType
 from runflow_shared.debug_utils import format_directory_tree
 from runflow_shared.git_sync import (
     apply_overlay_files,
@@ -58,15 +58,20 @@ def materialize_job_workspace(
         _emit(on_system_log, "Fichiers internes prêts")
         git_subpath = ""
 
-    entrypoint = job.get("entrypoint", "main.py")
-    try:
-        resolved = discover_entrypoint(workspace_job, entrypoint, git_subpath, configured=entrypoint)
-    except FileNotFoundError as exc:
-        raise RuntimeError(str(exc)) from exc
-    job["resolved_entrypoint"] = resolved
-    if resolved != entrypoint:
-        _emit(on_system_log, f"Entrypoint ajusté : {entrypoint} → {resolved}")
-    _emit(on_system_log, f"Entrypoint : {resolved}")
+    # SSH runs a remote command and Ansible uses ansible_config.playbook, so
+    # neither relies on a discovered .py/.sh entrypoint.
+    if job.get("runner_type") in (RunnerType.SSH, RunnerType.ANSIBLE):
+        job["resolved_entrypoint"] = job.get("entrypoint")
+    else:
+        entrypoint = job.get("entrypoint", "main.py")
+        try:
+            resolved = discover_entrypoint(workspace_job, entrypoint, git_subpath, configured=entrypoint)
+        except FileNotFoundError as exc:
+            raise RuntimeError(str(exc)) from exc
+        job["resolved_entrypoint"] = resolved
+        if resolved != entrypoint:
+            _emit(on_system_log, f"Entrypoint ajusté : {entrypoint} → {resolved}")
+        _emit(on_system_log, f"Entrypoint : {resolved}")
 
     if debug and on_debug_log:
         on_debug_log("── Arborescence job/ (aperçu) ──")
