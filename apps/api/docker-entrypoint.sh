@@ -43,7 +43,10 @@ asyncio.run(main())
 PY
 
 echo "==> Running database migrations..."
-alembic upgrade head
+if ! alembic upgrade head; then
+  echo "ERROR: alembic upgrade head failed" >&2
+  exit 1
+fi
 
 echo "==> Starting API server..."
 exec uvicorn runflow_api.main:app --host 0.0.0.0 --port 8000

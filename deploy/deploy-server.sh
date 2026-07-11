@@ -153,11 +153,42 @@ wait_for_api() {
       docker logs --tail 40 runflow_api 2>&1 || true
       die "Le conteneur runflow_api a crashé (status=${status})"
     fi
+    if (( i % 15 == 0 )); then
+      log "Toujours en attente (${i}/90) — derniers logs API :"
+      docker logs --tail 15 runflow_api 2>&1 || true
+    fi
     sleep 2
   done
   log "Derniers logs API :"
   docker logs --tail 40 runflow_api 2>&1 || true
   die "L'API n'a pas démarré dans le délai imparti"
+}
+
+users_table_exists() {
+  local pg_user="${POSTGRES_USER:-runflow}"
+  local pg_db="${POSTGRES_DB:-runflow}"
+  $COMPOSE exec -T postgres psql -U "$pg_user" -d "$pg_db" -tAc \
+    "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='users'" \
+    2>/dev/null | grep -q 1
+}
+
+ensure_migrations() {
+  if users_table_exists; then
+    log "Schéma base de données déjà migré"
+    return 0
+  fi
+
+  log "Table users absente — application des migrations Alembic..."
+  if ! $COMPOSE exec -T api alembic upgrade head; then
+    log "Échec des migrations — logs API :"
+    docker logs --tail 50 runflow_api 2>&1 || true
+    die "Les migrations Alembic ont échoué"
+  fi
+
+  if ! users_table_exists; then
+    die "Les migrations ont été exécutées mais la table users est toujours absente"
+  fi
+  log "Migrations appliquées avec succès"
 }
 
 sync_postgres_password() {
@@ -278,6 +309,7 @@ main() {
   log "Build et démarrage de l'API..."
   $COMPOSE up -d --build api
   wait_for_api
+  ensure_migrations
 
   log "Démarrage de l'interface web..."
   $COMPOSE up -d --build web

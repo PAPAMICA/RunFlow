@@ -40,8 +40,11 @@ def do_run_migrations(connection):
 
 
 async def run_async_migrations() -> None:
+    # get_section() lit alembic.ini ; injecter l'URL résolue (POSTGRES_* en Docker).
+    configuration = config.get_section(config.config_ini_section, {}) or {}
+    configuration["sqlalchemy.url"] = config.get_main_option("sqlalchemy.url")
     connectable = async_engine_from_config(
-        config.get_section(config.config_ini_section, {}),
+        configuration,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
