@@ -6,7 +6,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 COMPOSE_FILE="$ROOT/deploy/docker-compose.server.yml"
-COMPOSE="docker compose --project-directory $ROOT -f $COMPOSE_FILE"
+COMPOSE="docker compose --project-directory $ROOT -f $COMPOSE_FILE --env-file $ENV_FILE"
 ENV_FILE="$ROOT/.env"
 WORKER_NAME="${WORKER_NAME:-server}"
 WORKER_DIR="$ROOT/data/worker-${WORKER_NAME}"
@@ -172,16 +172,22 @@ users_table_exists() {
     2>/dev/null | grep -q 1
 }
 
-ensure_migrations() {
+run_db_migrations() {
   if users_table_exists; then
     log "Schéma base de données déjà migré"
     return 0
   fi
 
-  log "Table users absente — application des migrations Alembic..."
-  if ! $COMPOSE exec -T api alembic upgrade head; then
-    log "Échec des migrations — logs API :"
-    docker logs --tail 50 runflow_api 2>&1 || true
+  log "Application des migrations Alembic (one-shot, avant démarrage API)..."
+  log "Cible : ${POSTGRES_USER:-runflow}@${POSTGRES_HOST:-postgres}:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-runflow}"
+
+  if ! $COMPOSE run --rm --no-deps \
+      --entrypoint "" \
+      api /app/.venv/bin/alembic upgrade head; then
+    log "Diagnostic configuration API :"
+    $COMPOSE run --rm --no-deps --entrypoint "" api /app/.venv/bin/python -c \
+      "from runflow_api.config import get_settings; s=get_settings(); print('host=', s.postgres_host, 'db=', s.postgres_db, 'password_set=', bool(s.postgres_password))" \
+      || true
     die "Les migrations Alembic ont échoué"
   fi
 
@@ -306,10 +312,13 @@ main() {
     sync_postgres_password
   fi
 
-  log "Build et démarrage de l'API..."
-  $COMPOSE up -d --build api
+  log "Build image API..."
+  $COMPOSE build api
+  run_db_migrations
+
+  log "Démarrage de l'API..."
+  $COMPOSE up -d api
   wait_for_api
-  ensure_migrations
 
   log "Démarrage de l'interface web..."
   $COMPOSE up -d --build web

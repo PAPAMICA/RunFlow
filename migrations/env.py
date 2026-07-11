@@ -5,7 +5,7 @@ from logging.config import fileConfig
 
 from alembic import context
 from sqlalchemy import pool
-from sqlalchemy.ext.asyncio import async_engine_from_config
+from sqlalchemy.ext.asyncio import create_async_engine
 
 from runflow_api.config import get_settings
 from runflow_api.db import Base
@@ -40,12 +40,8 @@ def do_run_migrations(connection):
 
 
 async def run_async_migrations() -> None:
-    # get_section() lit alembic.ini ; injecter l'URL résolue (POSTGRES_* en Docker).
-    configuration = config.get_section(config.config_ini_section, {}) or {}
-    configuration["sqlalchemy.url"] = config.get_main_option("sqlalchemy.url")
-    connectable = async_engine_from_config(
-        configuration,
-        prefix="sqlalchemy.",
+    connectable = create_async_engine(
+        get_settings().database_url,
         poolclass=pool.NullPool,
     )
     async with connectable.connect() as connection:

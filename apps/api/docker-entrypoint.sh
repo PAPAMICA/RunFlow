@@ -3,43 +3,17 @@ set -e
 
 echo "==> RunFlow API entrypoint"
 
-echo "==> Waiting for Postgres..."
 python <<'PY'
-import asyncio
-import os
-import sys
+from runflow_api.config import get_settings
 
-import asyncpg
-
-
-async def main() -> None:
-    host = os.environ.get("POSTGRES_HOST", "postgres")
-    port = int(os.environ.get("POSTGRES_PORT", "5432"))
-    user = os.environ.get("POSTGRES_USER", "runflow")
-    password = os.environ.get("POSTGRES_PASSWORD", "")
-    database = os.environ.get("POSTGRES_DB", "runflow")
-
-    for attempt in range(1, 61):
-        try:
-            conn = await asyncpg.connect(
-                host=host,
-                port=port,
-                user=user,
-                password=password,
-                database=database,
-            )
-            await conn.close()
-            print(f"==> Postgres ready (attempt {attempt})")
-            return
-        except Exception as exc:
-            print(f"==> Waiting for Postgres ({attempt}/60): {exc}")
-            await asyncio.sleep(2)
-
-    print("ERROR: Postgres not reachable with configured credentials", file=sys.stderr)
-    sys.exit(1)
-
-
-asyncio.run(main())
+s = get_settings()
+print(
+    f"==> Database target: {s.postgres_user}@{s.postgres_host}:{s.postgres_port}/{s.postgres_db}"
+)
+if not s.postgres_host or not s.postgres_password:
+    raise SystemExit(
+        "ERROR: POSTGRES_HOST and POSTGRES_PASSWORD must be set in the API container"
+    )
 PY
 
 echo "==> Running database migrations..."
