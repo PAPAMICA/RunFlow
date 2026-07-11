@@ -25,6 +25,11 @@ load_env() {
     # shellcheck disable=SC1090
     source "$ENV_FILE"
     set +a
+    # Retirer les CR éventuels (fichier .env édité sous Windows)
+    POSTGRES_PASSWORD="${POSTGRES_PASSWORD//$'\r'/}"
+    JWT_SECRET="${JWT_SECRET//$'\r'/}"
+    RUNFLOW_MASTER_KEY="${RUNFLOW_MASTER_KEY//$'\r'/}"
+    RUNFLOW_ADMIN_PASSWORD="${RUNFLOW_ADMIN_PASSWORD//$'\r'/}"
   fi
 }
 
@@ -211,6 +216,40 @@ sync_postgres_password() {
   log "Mot de passe Postgres aligné sur .env"
 }
 
+verify_postgres_tcp_auth() {
+  log "Vérification authentification Postgres (TCP, comme l'API)..."
+  if $COMPOSE run --rm --no-deps --entrypoint "" api /app/.venv/bin/python -c "
+import asyncio
+import os
+import sys
+
+import asyncpg
+
+
+async def main() -> None:
+    conn = await asyncpg.connect(
+        host=os.environ.get('POSTGRES_HOST', 'postgres'),
+        port=int(os.environ.get('POSTGRES_PORT', '5432')),
+        user=os.environ.get('POSTGRES_USER', 'runflow'),
+        password=os.environ.get('POSTGRES_PASSWORD', ''),
+        database=os.environ.get('POSTGRES_DB', 'runflow'),
+    )
+    await conn.close()
+    print('OK')
+
+
+try:
+    asyncio.run(main())
+except Exception as exc:
+    print(f'FAIL: {exc}', file=sys.stderr)
+    raise SystemExit(1)
+"; then
+    log "Authentification Postgres OK"
+    return 0
+  fi
+  return 1
+}
+
 ensure_admin() {
   local email="${RUNFLOW_ADMIN_EMAIL:-admin@runflow.local}"
   local password="${RUNFLOW_ADMIN_PASSWORD:?RUNFLOW_ADMIN_PASSWORD manquant dans .env}"
@@ -268,15 +307,24 @@ main() {
   require_cmd docker
   require_cmd openssl
 
+  local reset_done=0
   if [[ "${1:-}" == "--reset" ]]; then
     log "Reset complet : arrêt des conteneurs et suppression de data/"
     $COMPOSE down --remove-orphans || true
     rm -rf "$ROOT/data"
+    reset_done=1
     shift
   fi
 
   ensure_env_file
   ensure_generated_secrets
+
+  if [[ $reset_done -eq 1 ]]; then
+    POSTGRES_PASSWORD="$(generate_secret)"
+    patch_env_var "POSTGRES_PASSWORD" "$POSTGRES_PASSWORD"
+    load_env
+    log "POSTGRES_PASSWORD régénéré pour la nouvelle base"
+  fi
   validate_env
 
   WORKER_NAME="${WORKER_NAME:-server}"
@@ -308,12 +356,17 @@ main() {
   fi
   wait_for_service_healthy runflow_postgres
   wait_for_service_healthy runflow_valkey
-  if [[ $fresh_postgres -eq 0 ]]; then
-    sync_postgres_password
-  fi
+  sync_postgres_password
 
   log "Build image API..."
   $COMPOSE build api
+
+  if ! verify_postgres_tcp_auth; then
+    log "Échec auth TCP — nouvelle synchronisation du mot de passe..."
+    sync_postgres_password
+    verify_postgres_tcp_auth || die "Postgres refuse le mot de passe du .env (vérifiez POSTGRES_PASSWORD)"
+  fi
+
   run_db_migrations
 
   log "Démarrage de l'API..."
