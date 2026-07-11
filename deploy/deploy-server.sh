@@ -8,6 +8,9 @@ cd "$ROOT"
 COMPOSE_FILE="$ROOT/deploy/docker-compose.server.yml"
 ENV_FILE="$ROOT/.env"
 COMPOSE="docker compose --project-directory $ROOT -f $COMPOSE_FILE --env-file $ENV_FILE"
+POSTGRES_CONTAINER="${POSTGRES_CONTAINER:-runflow_postgres}"
+POSTGRES_HOST="${POSTGRES_HOST:-runflow_postgres}"
+INTERNAL_NETWORK="${INTERNAL_NETWORK:-runflow_internal}"
 WORKER_NAME="${WORKER_NAME:-server}"
 WORKER_DIR="$ROOT/data/worker-${WORKER_NAME}"
 WORKER_ENV="$WORKER_DIR/worker.env"
@@ -35,6 +38,43 @@ load_env() {
 
 generate_secret() {
   openssl rand -hex 24
+}
+
+export_compose_env() {
+  load_env
+  export POSTGRES_USER="${POSTGRES_USER:-runflow}"
+  export POSTGRES_DB="${POSTGRES_DB:-runflow}"
+  export POSTGRES_HOST="${POSTGRES_HOST:-runflow_postgres}"
+  export POSTGRES_PORT="${POSTGRES_PORT:-5432}"
+  export POSTGRES_PASSWORD
+  export JWT_SECRET RUNFLOW_MASTER_KEY
+}
+
+generate_and_save_postgres_password() {
+  local reason="${1:-initialisation}"
+  POSTGRES_PASSWORD="$(generate_secret)"
+  patch_env_var "POSTGRES_PASSWORD" "$POSTGRES_PASSWORD"
+  patch_env_var "POSTGRES_HOST" "${POSTGRES_HOST:-runflow_postgres}"
+  export_compose_env
+  log "POSTGRES_PASSWORD généré (${reason})"
+  echo ""
+  echo "    Postgres : ${POSTGRES_USER}@${POSTGRES_HOST}/${POSTGRES_DB}"
+  echo "    Conteneur: ${POSTGRES_CONTAINER}"
+  echo "    Mot de passe : ${POSTGRES_PASSWORD}"
+  echo ""
+}
+
+compose_run_api() {
+  export_compose_env
+  $COMPOSE run --rm --no-deps \
+    --network "$INTERNAL_NETWORK" \
+    -e "POSTGRES_HOST=${POSTGRES_HOST}" \
+    -e "POSTGRES_PORT=${POSTGRES_PORT}" \
+    -e "POSTGRES_USER=${POSTGRES_USER}" \
+    -e "POSTGRES_PASSWORD=${POSTGRES_PASSWORD}" \
+    -e "POSTGRES_DB=${POSTGRES_DB}" \
+    --entrypoint "" \
+    api "$@"
 }
 
 ensure_env_file() {
@@ -83,9 +123,7 @@ ensure_generated_secrets() {
       || die "Données Postgres existantes : définissez POSTGRES_PASSWORD dans .env (mot de passe actuel ou nouveau après sync)"
     log "Données Postgres existantes — POSTGRES_PASSWORD conservé depuis .env"
   elif [[ -z "${POSTGRES_PASSWORD:-}" || "${POSTGRES_PASSWORD}" == change-me* ]]; then
-    POSTGRES_PASSWORD="$(generate_secret)"
-    patch_env_var "POSTGRES_PASSWORD" "$POSTGRES_PASSWORD"
-    log "POSTGRES_PASSWORD généré"
+    generate_and_save_postgres_password "première installation"
     changed=1
   fi
   if [[ -z "${RUNFLOW_ADMIN_PASSWORD:-}" ]]; then
@@ -172,7 +210,7 @@ wait_for_api() {
 users_table_exists() {
   local pg_user="${POSTGRES_USER:-runflow}"
   local pg_db="${POSTGRES_DB:-runflow}"
-  $COMPOSE exec -T postgres psql -U "$pg_user" -d "$pg_db" -tAc \
+  docker exec -i "$POSTGRES_CONTAINER" psql -U "$pg_user" -d "$pg_db" -tAc \
     "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='users'" \
     2>/dev/null | grep -q 1
 }
@@ -184,13 +222,11 @@ run_db_migrations() {
   fi
 
   log "Application des migrations Alembic (one-shot, avant démarrage API)..."
-  log "Cible : ${POSTGRES_USER:-runflow}@${POSTGRES_HOST:-postgres}:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-runflow}"
+  log "Cible : ${POSTGRES_USER}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB} (conteneur ${POSTGRES_CONTAINER})"
 
-  if ! $COMPOSE run --rm --no-deps \
-      --entrypoint "" \
-      api /app/.venv/bin/alembic upgrade head; then
+  if ! compose_run_api /app/.venv/bin/alembic upgrade head; then
     log "Diagnostic configuration API :"
-    $COMPOSE run --rm --no-deps --entrypoint "" api /app/.venv/bin/python -c \
+    compose_run_api /app/.venv/bin/python -c \
       "from runflow_api.config import get_settings; s=get_settings(); print('host=', s.postgres_host, 'db=', s.postgres_db, 'password_set=', bool(s.postgres_password))" \
       || true
     die "Les migrations Alembic ont échoué"
@@ -209,16 +245,16 @@ sync_postgres_password() {
   local pg_user="${POSTGRES_USER:-runflow}"
   local pg_password_escaped
   pg_password_escaped="$(escape_sql_string "${POSTGRES_PASSWORD}")"
-  log "Synchronisation du mot de passe Postgres (${pg_user}) avec .env..."
-  $COMPOSE exec -T postgres psql -U "$pg_user" -d postgres \
+  log "Synchronisation du mot de passe Postgres (${pg_user}@${POSTGRES_CONTAINER}) avec .env..."
+  docker exec -i "$POSTGRES_CONTAINER" psql -U "$pg_user" -d postgres \
     -c "ALTER USER ${pg_user} PASSWORD '${pg_password_escaped}';" \
     >/dev/null
   log "Mot de passe Postgres aligné sur .env"
 }
 
 verify_postgres_tcp_auth() {
-  log "Vérification authentification Postgres (TCP, comme l'API)..."
-  if $COMPOSE run --rm --no-deps --entrypoint "" api /app/.venv/bin/python -c "
+  log "Vérification authentification Postgres (TCP → ${POSTGRES_HOST})..."
+  if compose_run_api /app/.venv/bin/python -c "
 import asyncio
 import os
 import sys
@@ -228,7 +264,7 @@ import asyncpg
 
 async def main() -> None:
     conn = await asyncpg.connect(
-        host=os.environ.get('POSTGRES_HOST', 'postgres'),
+        host=os.environ['POSTGRES_HOST'],
         port=int(os.environ.get('POSTGRES_PORT', '5432')),
         user=os.environ.get('POSTGRES_USER', 'runflow'),
         password=os.environ.get('POSTGRES_PASSWORD', ''),
@@ -244,7 +280,7 @@ except Exception as exc:
     print(f'FAIL: {exc}', file=sys.stderr)
     raise SystemExit(1)
 "; then
-    log "Authentification Postgres OK"
+    log "Authentification Postgres OK (${POSTGRES_HOST})"
     return 0
   fi
   return 1
@@ -320,11 +356,9 @@ main() {
   ensure_generated_secrets
 
   if [[ $reset_done -eq 1 ]]; then
-    POSTGRES_PASSWORD="$(generate_secret)"
-    patch_env_var "POSTGRES_PASSWORD" "$POSTGRES_PASSWORD"
-    load_env
-    log "POSTGRES_PASSWORD régénéré pour la nouvelle base"
+    generate_and_save_postgres_password "reset complet"
   fi
+  export_compose_env
   validate_env
 
   WORKER_NAME="${WORKER_NAME:-server}"
@@ -335,6 +369,11 @@ main() {
   if [[ ! -f "$ROOT/data/postgres/PG_VERSION" ]]; then
     fresh_postgres=1
   fi
+
+  if [[ $fresh_postgres -eq 1 && $reset_done -eq 0 ]]; then
+    generate_and_save_postgres_password "nouvelle base de données"
+  fi
+  export_compose_env
 
   log "Préparation des répertoires de données..."
   mkdir -p "$ROOT/data/postgres" "$ROOT/data/runflow"
@@ -348,6 +387,7 @@ main() {
   "$ROOT/deploy/build-runners.sh"
 
   log "Build et démarrage de Postgres + Valkey..."
+  export_compose_env
   if [[ $fresh_postgres -eq 1 ]]; then
     log "Nouvelle base Postgres — initialisation..."
     $COMPOSE up -d --force-recreate postgres valkey
@@ -391,6 +431,10 @@ main() {
   echo " Web  : https://${RUNFLOW_WEB_HOST}"
   echo " API  : https://${RUNFLOW_API_HOST}"
   echo " Admin: ${RUNFLOW_ADMIN_EMAIL:-admin@runflow.local}"
+  echo "        (mot de passe dans .env → RUNFLOW_ADMIN_PASSWORD)"
+  echo ""
+  echo " Postgres: ${POSTGRES_USER}@${POSTGRES_HOST}/${POSTGRES_DB}"
+  echo "           (mot de passe dans .env → POSTGRES_PASSWORD)"
   echo ""
   echo " Worker : ${WORKER_NAME} (réseau interne → http://api:8000)"
   echo " Données: $ROOT/data/"
