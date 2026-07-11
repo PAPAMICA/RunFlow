@@ -493,9 +493,6 @@ class DockerExecutor(BaseRunner):
         input_dir = Path(ctx.workspace_path) / "input"
         input_dir.mkdir(parents=True, exist_ok=True)
 
-        hosts = resolve_ssh_hosts(
-            ssh_cfg, ctx.job.get("resolved_inventories"), ctx.arguments
-        )
         remote_cmd = render_remote_command(ssh_cfg.get("command", ""), ctx.arguments)
         cmd_path = input_dir / "ssh_command.sh"
         cmd_path.write_text(remote_cmd + "\n", encoding="utf-8")
@@ -505,16 +502,22 @@ class DockerExecutor(BaseRunner):
         use_password = bool(cred and cred.get("password") and not key_path)
         if use_password:
             ctx.env["SSHPASS"] = str(cred["password"])
-        if cred and cred.get("username") and not ssh_cfg.get("user"):
-            ssh_cfg = {**ssh_cfg, "user": cred["username"]}
+
+        default_user = ssh_cfg.get("user") or (cred.get("username") if cred else None) or "root"
+        default_port = int(ssh_cfg.get("port") or 22)
+        hosts = resolve_ssh_hosts(
+            ssh_cfg,
+            ctx.job.get("resolved_inventories"),
+            ctx.arguments,
+            default_user=default_user,
+            default_port=default_port,
+        )
 
         if not hosts:
             script = 'echo "Aucun hôte SSH résolu" >&2; exit 2'
         else:
             script = build_ssh_script(
                 hosts=hosts,
-                user=ssh_cfg.get("user") or "root",
-                port=int(ssh_cfg.get("port") or 22),
                 command_file=f"{root}/input/ssh_command.sh",
                 key_file=f"{root}/input/ssh_key" if key_path else None,
                 use_password=use_password,
@@ -522,7 +525,12 @@ class DockerExecutor(BaseRunner):
             )
 
         if ctx.on_system_log:
-            ctx.on_system_log(f"SSH sur {len(hosts)} hôte(s) : {', '.join(hosts) or '(aucun)'}")
+            labels = [
+                f"{h['user']}@{h['address']}:{h['port']}" for h in hosts
+            ]
+            ctx.on_system_log(
+                f"SSH sur {len(hosts)} hôte(s) : {', '.join(labels) or '(aucun)'}"
+            )
 
         return ["/bin/sh", "-c", script]
 

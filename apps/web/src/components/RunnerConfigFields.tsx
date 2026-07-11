@@ -208,6 +208,11 @@ export function RunnerConfigFields({
             onToggle={(id) => onSsh({ inventory_refs: toggle(ssh.inventory_refs ?? [], id) })}
             empty="Aucun inventaire enregistré."
           />
+          <p className="text-[11px] text-muted-foreground">
+            Les variables par hôte <code>ansible_host</code>, <code>ansible_port</code> et{" "}
+            <code>ansible_user</code> de l&apos;inventaire sont respectées ; l&apos;utilisateur et le
+            port ci-dessous servent de valeurs par défaut.
+          </p>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-3">

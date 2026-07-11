@@ -78,10 +78,9 @@ def test_ssh_command_key_auth(tmp_path):
     assert cmd[0] == "/bin/sh"
     assert cmd[1] == "-c"
     script = cmd[2]
-    assert "for H in h1 h2; do" in script
+    assert "run_host deploy 2222 h1" in script
+    assert "run_host deploy 2222 h2" in script
     assert "-i /runflow/input/ssh_key" in script
-    assert "-p 2222" in script
-    assert "deploy@" in script
     assert "sshpass" not in script
 
     remote = (tmp_path / "input" / "ssh_command.sh").read_text()
@@ -101,6 +100,23 @@ def test_ssh_command_password_auth(tmp_path):
     assert "sshpass -e ssh" in script
     assert "sudo -H bash -s" in script
     assert ctx.env["SSHPASS"] == "s3cret"
+
+
+def test_ssh_command_inventory_per_host(tmp_path):
+    job = {
+        "runner_type": "ssh",
+        "ssh_config": {"inventory_refs": ["inv1"], "command": "uptime"},
+        "resolved_inventories": [
+            {
+                "content": "[prod]\nskynet ansible_host=skynet.papamica.net ansible_port=1511 ansible_user=papamica",
+            }
+        ],
+        "credentials": [{"data": {"private_key": "PRIV"}}],
+    }
+    ctx = _ctx(tmp_path, job)
+    cmd = DockerExecutor()._ssh_command(ctx, "/runflow")
+    script = cmd[2]
+    assert "run_host papamica 1511 skynet.papamica.net" in script
 
 
 def test_ssh_command_no_hosts(tmp_path):
