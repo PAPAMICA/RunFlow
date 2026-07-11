@@ -113,6 +113,20 @@ EOF
   fi
 }
 
+wait_for_service_healthy() {
+  local container="$1"
+  log "Attente de ${container}..."
+  local i status
+  for i in $(seq 1 60); do
+    status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$container" 2>/dev/null || true)"
+    if [[ "$status" == "healthy" ]]; then
+      return 0
+    fi
+    sleep 2
+  done
+  die "${container} n'est pas healthy"
+}
+
 wait_for_api() {
   log "Attente de l'API..."
   local i status
@@ -121,14 +135,17 @@ wait_for_api() {
       log "API prête"
       return 0
     fi
-    status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' runflow_api 2>/dev/null || true)"
-    if [[ "$status" == "healthy" ]]; then
-      log "API prête (healthcheck)"
-      return 0
+    status="$(docker inspect --format '{{.State.Status}}' runflow_api 2>/dev/null || true)"
+    if [[ "$status" == "restarting" || "$status" == "exited" ]]; then
+      log "Conteneur API en échec, logs récents :"
+      docker logs --tail 40 runflow_api 2>&1 || true
+      die "Le conteneur runflow_api a crashé (status=${status})"
     fi
     sleep 2
   done
-  die "L'API n'a pas démarré dans le délai imparti. Vérifiez : docker logs runflow_api"
+  log "Derniers logs API :"
+  docker logs --tail 40 runflow_api 2>&1 || true
+  die "L'API n'a pas démarré dans le délai imparti"
 }
 
 ensure_admin() {
@@ -207,10 +224,17 @@ main() {
   log "Construction des images runner..."
   "$ROOT/deploy/build-runners.sh"
 
-  log "Build et démarrage des services (sans worker)..."
-  $COMPOSE up -d --build postgres valkey api web
+  log "Build et démarrage de Postgres + Valkey..."
+  $COMPOSE up -d postgres valkey
+  wait_for_service_healthy runflow_postgres
+  wait_for_service_healthy runflow_valkey
 
+  log "Build et démarrage de l'API..."
+  $COMPOSE up -d --build api
   wait_for_api
+
+  log "Démarrage de l'interface web..."
+  $COMPOSE up -d --build web
   ensure_admin
   ensure_worker_credentials
 

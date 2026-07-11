@@ -16,7 +16,11 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column("workers", sa.Column("registration_token_hash", sa.String(64), nullable=True))
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    columns = {col["name"] for col in inspector.get_columns("workers")}
+    if "registration_token_hash" not in columns:
+        op.add_column("workers", sa.Column("registration_token_hash", sa.String(64), nullable=True))
 
 
 def downgrade() -> None:

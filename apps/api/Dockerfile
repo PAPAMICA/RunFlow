@@ -14,9 +14,12 @@ COPY alembic.ini .
 
 RUN uv sync --package runflow-api
 
+COPY apps/api/docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+
 ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONPATH="/app/apps/api"
 
 EXPOSE 8000
 
-CMD ["sh", "-c", "alembic upgrade head && uvicorn runflow_api.main:app --host 0.0.0.0 --port 8000"]
+ENTRYPOINT ["/docker-entrypoint.sh"]
