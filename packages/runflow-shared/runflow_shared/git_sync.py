@@ -7,10 +7,13 @@ import logging
 import os
 import shutil
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 from urllib.parse import quote, urlparse, urlunparse
 
 logger = logging.getLogger(__name__)
+
+SystemLogFn = Callable[[str], None] | None
 
 GIT_MISSING_MSG = "Git n'est pas installé — installez git dans le conteneur"
 AUTH_REQUIRED_HINT = (
@@ -157,8 +160,54 @@ def _update_repo(clone_url: str, branch: str, cache_dir: Path, *, had_auth: bool
         raise RuntimeError(_friendly_git_error(str(exc), had_auth=had_auth)) from exc
 
 
-def get_git_worktree(git_config: dict, *, data_dir: Path) -> Path:
+def resolve_entrypoint(entrypoint: str, git_subpath: str = "") -> str:
+    """Normalize entrypoint path relative to the synced git root (subpath or repo root)."""
+    ep = entrypoint.strip().replace("\\", "/").lstrip("/")
+    sub = (git_subpath or "").strip().replace("\\", "/").strip("/")
+    if not sub:
+        return ep
+    prefix = f"{sub}/"
+    if ep.startswith(prefix):
+        return ep[len(prefix) :]
+    return ep
+
+
+def _list_workspace_scripts(root: Path, *, limit: int = 12) -> list[str]:
+    if not root.is_dir():
+        return []
+    found: list[str] = []
+    for path in sorted(root.rglob("*")):
+        if path.is_file() and path.suffix in {".py", ".sh", ".bash"}:
+            found.append(path.relative_to(root).as_posix())
+            if len(found) >= limit:
+                break
+    return found
+
+
+def validate_job_entrypoint(workspace: Path, resolved: str, *, configured: str) -> None:
+    target = workspace / resolved
+    if target.is_file():
+        return
+    scripts = _list_workspace_scripts(workspace)
+    hint = f" Scripts trouvés : {', '.join(scripts)}." if scripts else " Aucun script .py/.sh dans le workspace."
+    raise FileNotFoundError(
+        f"Entrypoint introuvable : « {resolved} » (configuré : « {configured} »).{hint}"
+    )
+
+
+def get_git_worktree(
+    git_config: dict,
+    *,
+    data_dir: Path,
+    on_log: SystemLogFn = None,
+) -> Path:
     """Fetch git repo and return the effective source directory (cached)."""
+
+    def emit(message: str) -> None:
+        logger.info(message)
+        if on_log:
+            on_log(message)
+
     ensure_git_ready()
     url = git_config["repository_url"]
     branch = git_config.get("branch") or "main"
@@ -170,19 +219,30 @@ def get_git_worktree(git_config: dict, *, data_dir: Path) -> Path:
     had_auth = bool(access_token and str(access_token).strip())
     clone_url = _auth_repository_url(canonical_url, access_token, username)
 
+    emit(f"Clone Git : {canonical_url}")
+    emit(f"Branche : {branch}")
+    if subpath:
+        emit(f"Sous-dossier : {subpath}")
+
     cache_dir = data_dir / "git-cache" / _repo_hash(canonical_url)
     cache_dir.parent.mkdir(parents=True, exist_ok=True)
 
     if (cache_dir / ".git").exists():
+        emit("Mise à jour du dépôt (git fetch)…")
         try:
             _update_repo(clone_url, branch, cache_dir, had_auth=had_auth)
+            emit("Dépôt mis à jour")
         except RuntimeError:
             logger.warning("git cache refresh failed, recloning %s", canonical_url)
+            emit("Échec du fetch — reclonage complet…")
             _clone_repo(clone_url, branch, cache_dir, had_auth=had_auth)
+            emit("Clone Git terminé")
     else:
+        emit("Clone initial du dépôt…")
         if cache_dir.exists():
             shutil.rmtree(cache_dir)
         _clone_repo(clone_url, branch, cache_dir, had_auth=had_auth)
+        emit("Clone Git terminé")
 
     src = cache_dir / subpath if subpath else cache_dir
     if not src.is_dir():
@@ -190,12 +250,27 @@ def get_git_worktree(git_config: dict, *, data_dir: Path) -> Path:
     return src
 
 
-def sync_git_to_dir(git_config: dict, target_dir: Path, *, data_dir: Path) -> Path:
+def sync_git_to_dir(
+    git_config: dict,
+    target_dir: Path,
+    *,
+    data_dir: Path,
+    on_log: SystemLogFn = None,
+) -> Path:
     """Clone/fetch git repo and copy sources into target_dir."""
-    src = get_git_worktree(git_config, data_dir=data_dir)
+
+    def emit(message: str) -> None:
+        logger.info(message)
+        if on_log:
+            on_log(message)
+
+    src = get_git_worktree(git_config, data_dir=data_dir, on_log=on_log)
+    emit("Copie des sources vers le workspace…")
     if target_dir.exists():
         shutil.rmtree(target_dir)
     shutil.copytree(src, target_dir)
+    file_count = sum(1 for p in target_dir.rglob("*") if p.is_file())
+    emit(f"Workspace prêt ({file_count} fichier(s))")
     return target_dir
 
 

@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 
 from runflow_api.services.git_sync import get_git_worktree
+from runflow_shared.git_sync import resolve_entrypoint
 from runflow_api.services.script_parser import parse_script_parameters
 
 logger = logging.getLogger(__name__)
@@ -97,7 +98,8 @@ def build_git_preview(
     resolved_entrypoint = entrypoint or (suggested[0] if suggested else None)
     detected: list[dict] = []
     if resolved_entrypoint:
-        script_path = root / resolved_entrypoint
+        resolved_path = resolve_entrypoint(resolved_entrypoint, git_config.get("path", ""))
+        script_path = root / resolved_path
         if script_path.is_file():
             try:
                 source = script_path.read_text(encoding="utf-8", errors="replace")
@@ -114,5 +116,5 @@ def build_git_preview(
         "env_example_content": env_content,
         "suggested_entrypoints": suggested,
         "detected_parameters": detected,
-        "entrypoint": resolved_entrypoint,
+        "entrypoint": resolve_entrypoint(resolved_entrypoint, git_config.get("path", "")) if resolved_entrypoint else None,
     }

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -14,6 +15,7 @@ class RunContext:
     arguments: dict[str, Any]
     workspace_path: str
     env: dict[str, str] = field(default_factory=dict)
+    on_system_log: Callable[[str], None] | None = None
 
 
 @dataclass

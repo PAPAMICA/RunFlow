@@ -232,6 +232,11 @@ export default function JobDetailPage() {
             <div className="space-y-2">
               <Label>Script Python (entrypoint)</Label>
               <Input value={entrypoint} onChange={(e) => setEntrypoint(e.target.value)} />
+              {job.source_type === "git" && repoPath && (
+                <p className="text-xs text-muted-foreground">
+                  Relatif au sous-dossier « {repoPath} » — ex. <code className="font-mono">sync_migrations.py</code>, pas <code className="font-mono">{repoPath}/sync_migrations.py</code>
+                </p>
+              )}
             </div>
             <div className="space-y-2">
               <Label>Fichier .env (injecté à chaque exécution)</Label>

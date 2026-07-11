@@ -4,17 +4,29 @@ from __future__ import annotations
 
 import logging
 import shutil
+from collections.abc import Callable
 from pathlib import Path
 
 from runflow_shared import SourceType
-from runflow_shared.git_sync import apply_overlay_files, sync_git_to_dir, write_internal_files
+from runflow_shared.git_sync import apply_overlay_files, resolve_entrypoint, sync_git_to_dir, validate_job_entrypoint, write_internal_files
 
 from runflow_worker.config import get_settings
 
 logger = logging.getLogger(__name__)
 
 
-def materialize_job_workspace(job: dict, workspace_job: Path) -> None:
+def _emit(on_system_log: Callable[[str], None] | None, message: str) -> None:
+    logger.info(message)
+    if on_system_log:
+        on_system_log(message)
+
+
+def materialize_job_workspace(
+    job: dict,
+    workspace_job: Path,
+    *,
+    on_system_log: Callable[[str], None] | None = None,
+) -> None:
     """Prepare workspace/job from git clone or internal files sent in the claim payload."""
     settings = get_settings()
     data_dir = Path(settings.worker_data_dir)
@@ -25,18 +37,21 @@ def materialize_job_workspace(job: dict, workspace_job: Path) -> None:
 
     if source_type == SourceType.GIT and job.get("git_config"):
         git_cfg = job["git_config"]
-        logger.info(
-            "Clone Git %s (branche=%s)",
-            git_cfg.get("repository_url"),
-            git_cfg.get("branch", "main"),
-        )
-        sync_git_to_dir(git_cfg, workspace_job, data_dir=data_dir)
-        logger.info("Clone Git terminé → %s", workspace_job)
+        sync_git_to_dir(git_cfg, workspace_job, data_dir=data_dir, on_log=on_system_log)
         overlay = job.get("overlay_files") or []
         if overlay:
             apply_overlay_files(workspace_job, overlay)
-            logger.info("Overlay appliqué (%d fichier(s))", len(overlay))
+            _emit(on_system_log, f"Overlay appliqué ({len(overlay)} fichier(s))")
+        git_subpath = git_cfg.get("path", "")
     else:
         files = job.get("internal_files") or []
-        logger.info("Écriture de %d fichier(s) internes", len(files))
+        _emit(on_system_log, f"Écriture de {len(files)} fichier(s) internes…")
         write_internal_files(workspace_job, files)
+        _emit(on_system_log, "Fichiers internes prêts")
+        git_subpath = ""
+
+    entrypoint = job.get("entrypoint", "main.py")
+    resolved = resolve_entrypoint(entrypoint, git_subpath)
+    validate_job_entrypoint(workspace_job, resolved, configured=entrypoint)
+    job["resolved_entrypoint"] = resolved
+    _emit(on_system_log, f"Entrypoint : {resolved}")

@@ -112,9 +112,17 @@ class DockerExecutor(BaseRunner):
         workspace.mkdir(parents=True, exist_ok=True)
 
         log.info("Préparation workspace %s", workspace_job)
-        await asyncio.to_thread(materialize_job_workspace, ctx.job, workspace_job)
+        await asyncio.to_thread(
+            materialize_job_workspace,
+            ctx.job,
+            workspace_job,
+            on_system_log=ctx.on_system_log,
+        )
         ctx.job["job_files_path"] = str(workspace_job)
-        log.info("Workspace prêt — lancement du runner %s", ctx.job.get("runner_type"))
+        if ctx.on_system_log:
+            ctx.on_system_log(
+                f"Lancement du runner {ctx.job.get('runner_type')} — {ctx.job.get('resolved_entrypoint', ctx.job.get('entrypoint'))}"
+            )
 
         for sub in ("input", "output"):
             (workspace / sub).mkdir(parents=True, exist_ok=True)
@@ -135,7 +143,7 @@ class DockerExecutor(BaseRunner):
         cpu_limit = job.get("cpu_limit", 1.0)
         network_mode = job.get("network_mode", "bridge")
         timeout = job.get("timeout_seconds", 300)
-        entrypoint = job.get("entrypoint", "main.py")
+        entrypoint = job.get("resolved_entrypoint") or job.get("entrypoint", "main.py")
 
         volumes = {
             str(workspace): {"bind": "/runflow", "mode": "rw"},
@@ -239,7 +247,7 @@ class DockerExecutor(BaseRunner):
 
         job = ctx.job
         workspace = Path(ctx.workspace_path) / "job"
-        entrypoint = job.get("entrypoint", "main.py")
+        entrypoint = job.get("resolved_entrypoint") or job.get("entrypoint", "main.py")
         env = {**os.environ, **ctx.env}
         env_file = workspace / ".env"
         if env_file.is_file():

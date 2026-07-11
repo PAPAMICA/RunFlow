@@ -106,11 +106,21 @@ class WorkerAgent:
         try:
             await self.client.accept(run_id)
             await self._push_system_log(run_id, "Run accepté — préparation du workspace")
+
+            loop = asyncio.get_running_loop()
+
+            def on_system_log(message: str) -> None:
+                asyncio.run_coroutine_threadsafe(
+                    self._push_system_log(run_id, message),
+                    loop,
+                )
+
             ctx = RunContext(
                 run_id=run_id,
                 job=job,
                 arguments=claim.get("arguments", {}),
                 workspace_path=workspace_path,
+                on_system_log=on_system_log,
             )
             output = await self.executor.run(ctx)
 
