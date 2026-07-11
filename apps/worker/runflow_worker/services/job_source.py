@@ -32,6 +32,7 @@ def materialize_job_workspace(
     workspace_job: Path,
     *,
     on_system_log: Callable[[str], None] | None = None,
+    on_debug_log: Callable[[str], None] | None = None,
     debug: bool = False,
 ) -> None:
     """Prepare workspace/job from git clone or internal files sent in the claim payload."""
@@ -67,7 +68,7 @@ def materialize_job_workspace(
         _emit(on_system_log, f"Entrypoint ajusté : {entrypoint} → {resolved}")
     _emit(on_system_log, f"Entrypoint : {resolved}")
 
-    if debug:
-        _emit(on_system_log, "── Arborescence job/ (aperçu) ──")
+    if debug and on_debug_log:
+        on_debug_log("── Arborescence job/ (aperçu) ──")
         for line in format_directory_tree(workspace_job, max_depth=3, max_entries=80):
-            _emit(on_system_log, f"  {line}")
+            on_debug_log(f"  {line}")

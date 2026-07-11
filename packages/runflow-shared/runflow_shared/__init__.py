@@ -50,6 +50,7 @@ class LogStream(StrEnum):
     STDOUT = "stdout"
     STDERR = "stderr"
     SYSTEM = "system"
+    DEBUG = "debug"
 
 
 class ResultParser(StrEnum):

@@ -120,6 +120,7 @@ class DockerExecutor(BaseRunner):
             ctx.job,
             workspace_job,
             on_system_log=ctx.on_system_log,
+            on_debug_log=ctx.on_debug_log,
             debug=ctx.debug,
         )
         ctx.job["job_files_path"] = str(workspace_job)
@@ -134,7 +135,7 @@ class DockerExecutor(BaseRunner):
                 workspace,
                 ctx.job,
                 ctx.arguments,
-                on_log=ctx.on_system_log,
+                on_log=ctx.on_debug_log,
             )
 
         if ctx.on_system_log:
@@ -183,7 +184,7 @@ class DockerExecutor(BaseRunner):
                 volumes=volumes,
                 env=ctx.env,
                 secret_keys=secret_keys,
-                on_log=ctx.on_system_log,
+                on_log=ctx.on_debug_log,
             )
 
         try:
@@ -237,7 +238,7 @@ class DockerExecutor(BaseRunner):
                         output.exit_code,
                         output.stdout,
                         output.stderr,
-                        on_log=ctx.on_system_log,
+                        on_log=ctx.on_debug_log,
                     )
                 return output
 
@@ -259,7 +260,7 @@ class DockerExecutor(BaseRunner):
                     output.exit_code,
                     output.stdout,
                     output.stderr,
-                    on_log=ctx.on_system_log,
+                    on_log=ctx.on_debug_log,
                 )
             else:
                 ctx._log_entries = log_entries  # type: ignore[attr-defined]
@@ -312,11 +313,11 @@ class DockerExecutor(BaseRunner):
         else:
             cmd = ["python3", str(workspace / entrypoint)]
 
-        if ctx.debug and ctx.on_system_log:
+        if ctx.debug and ctx.on_debug_log:
             import shlex
-            ctx.on_system_log(f"── Exécution locale (docker désactivé) ──")
-            ctx.on_system_log(f"  commande: {' '.join(shlex.quote(c) for c in cmd)}")
-            ctx.on_system_log(f"  cwd: {workspace}")
+            ctx.on_debug_log("── Exécution locale (docker désactivé) ──")
+            ctx.on_debug_log(f"  commande: {' '.join(shlex.quote(c) for c in cmd)}")
+            ctx.on_debug_log(f"  cwd: {workspace}")
 
         proc = await asyncio.create_subprocess_exec(
             *cmd,
@@ -350,7 +351,7 @@ class DockerExecutor(BaseRunner):
                 output.exit_code,
                 output.stdout,
                 output.stderr,
-                on_log=ctx.on_system_log,
+                on_log=ctx.on_debug_log,
             )
         return output
 

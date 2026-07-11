@@ -17,6 +17,7 @@ class RunContext:
     debug: bool = False
     env: dict[str, str] = field(default_factory=dict)
     on_system_log: Callable[[str], None] | None = None
+    on_debug_log: Callable[[str], None] | None = None
     on_stream_log: Callable[[str, str], None] | None = None
 
 

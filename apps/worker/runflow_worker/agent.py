@@ -10,7 +10,7 @@ from pathlib import Path
 
 from httpx import ConnectError, HTTPError
 
-from runflow_worker import __version__
+from runflow_shared import LogStream
 from runflow_worker.client import WorkerAPIClient
 from runflow_worker.config import get_settings
 from runflow_worker.runners.base import RunContext
@@ -83,28 +83,31 @@ class WorkerAgent:
                 logger.exception("Heartbeat failed")
             await asyncio.sleep(self.settings.heartbeat_interval)
 
-    async def _push_system_log(self, run_id: str, message: str) -> None:
-        logger.info("[run %s] %s", run_id, message)
+    async def _push_run_log(self, run_id: str, stream: str, message: str) -> None:
+        logger.info("[run %s][%s] %s", run_id, stream, message)
         try:
             await self.client.push_logs(
                 run_id,
                 [
                     {
-                        "stream": "system",
+                        "stream": stream,
                         "message": message,
                         "timestamp": datetime.now(UTC).isoformat(),
                     }
                 ],
             )
         except Exception:
-            logger.warning("Impossible d'envoyer le log système pour %s", run_id)
+            logger.warning("Impossible d'envoyer le log %s pour %s", stream, run_id)
+
+    async def _push_system_log(self, run_id: str, message: str) -> None:
+        await self._push_run_log(run_id, LogStream.SYSTEM, message)
 
     async def _execute_run(self, claim: dict) -> None:
         run_id = claim["run_id"]
         job = claim["job"]
         debug = bool(claim.get("debug"))
         workspace_path = str(Path(self.settings.runs_dir) / run_id)
-        log_queue: asyncio.Queue[str | None] = asyncio.Queue()
+        log_queue: asyncio.Queue[tuple[str, str] | None] = asyncio.Queue()
         stream_queue: asyncio.Queue[tuple[str, str] | None] = asyncio.Queue()
         drain_task: asyncio.Task | None = None
         stream_drain_task: asyncio.Task | None = None
@@ -112,16 +115,21 @@ class WorkerAgent:
             await self.client.accept(run_id)
             await self._push_system_log(run_id, "Run accepté — préparation du workspace")
             if debug:
-                await self._push_system_log(run_id, "Mode debug activé — logs verbeux du runner")
+                await self._push_run_log(
+                    run_id,
+                    LogStream.DEBUG,
+                    "Mode debug activé — diagnostics runner ci-dessous",
+                )
 
             loop = asyncio.get_running_loop()
 
-            async def _drain_system_logs() -> None:
+            async def _drain_run_logs() -> None:
                 while True:
-                    message = await log_queue.get()
-                    if message is None:
+                    item = await log_queue.get()
+                    if item is None:
                         break
-                    await self._push_system_log(run_id, message)
+                    stream, message = item
+                    await self._push_run_log(run_id, stream, message)
 
             async def _drain_stream_logs() -> None:
                 while True:
@@ -143,12 +151,15 @@ class WorkerAgent:
                     except Exception:
                         logger.warning("Impossible d'envoyer le log %s pour %s", stream, run_id)
 
-            drain_task = asyncio.create_task(_drain_system_logs())
+            drain_task = asyncio.create_task(_drain_run_logs())
             if debug:
                 stream_drain_task = asyncio.create_task(_drain_stream_logs())
 
             def on_system_log(message: str) -> None:
-                loop.call_soon_threadsafe(log_queue.put_nowait, message)
+                loop.call_soon_threadsafe(log_queue.put_nowait, (LogStream.SYSTEM, message))
+
+            def on_debug_log(message: str) -> None:
+                loop.call_soon_threadsafe(log_queue.put_nowait, (LogStream.DEBUG, message))
 
             def on_stream_log(stream: str, message: str) -> None:
                 loop.call_soon_threadsafe(stream_queue.put_nowait, (stream, message))
@@ -160,6 +171,7 @@ class WorkerAgent:
                 workspace_path=workspace_path,
                 debug=debug,
                 on_system_log=on_system_log,
+                on_debug_log=on_debug_log if debug else None,
                 on_stream_log=on_stream_log if debug else None,
             )
             output = await self.executor.run(ctx)

@@ -80,7 +80,6 @@ def emit_workspace_debug(
     if input_dir.is_dir():
         sections.append((f"Arborescence {input_dir.name}/", format_directory_tree(input_dir, max_depth=2)))
 
-    _emit(on_log, "Mode debug activé")
     emit_debug_sections(on_log or (lambda _m: None), sections)
 
 
