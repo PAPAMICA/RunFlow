@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import json
 import os
+import shlex
 import shutil
 from datetime import UTC, datetime
 from pathlib import Path
@@ -19,6 +20,60 @@ from runflow_worker.debug_log import emit_post_run_debug, emit_runner_debug, emi
 from runflow_worker.docker_paths import resolve_docker_bind_path, self_container_id
 from runflow_worker.runners.base import BaseRunner, RunContext, RunOutput
 from runflow_shared import RunnerType
+
+
+def _is_truthy(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def build_cli_arguments(job: dict[str, Any], arguments: dict[str, Any]) -> list[str]:
+    """Turn job arguments into an argparse-style CLI argv.
+
+    - ``flag`` parameters emit ``--name`` only when truthy (present/absent).
+    - ``boolean`` parameters emit ``--name true|false``.
+    - ``multi_select`` lists emit the flag once per value.
+    - anything else emits ``--name value`` (skipped when empty).
+
+    Parameter names are mapped to long options (``cal_only`` -> ``--cal-only``).
+    Declared parameters are emitted first (by position); any extra arguments
+    (e.g. forced arguments without a parameter definition) follow.
+    """
+    params = job.get("parameters") or []
+    param_by_name = {p.get("name"): p for p in params if p.get("name")}
+
+    ordered_names: list[str] = []
+    for p in sorted(params, key=lambda x: x.get("position", 0) or 0):
+        name = p.get("name")
+        if name and name in arguments and name not in ordered_names:
+            ordered_names.append(name)
+    for name in arguments:
+        if name not in ordered_names:
+            ordered_names.append(name)
+
+    cli: list[str] = []
+    for name in ordered_names:
+        value = arguments.get(name)
+        ptype = (param_by_name.get(name) or {}).get("param_type", "string")
+        flag = "--" + str(name).replace("_", "-")
+
+        if ptype == "flag":
+            if _is_truthy(value):
+                cli.append(flag)
+            continue
+        if value is None or value == "":
+            continue
+        if ptype == "boolean":
+            cli.extend([flag, "true" if _is_truthy(value) else "false"])
+        elif isinstance(value, list):
+            for v in value:
+                cli.extend([flag, str(v)])
+        else:
+            cli.extend([flag, str(value)])
+    return cli
 
 
 class DockerExecutor(BaseRunner):
@@ -112,7 +167,10 @@ class DockerExecutor(BaseRunner):
         root = ctx.container_root
         cache = ctx.cache_root
         entry = f"{root}/job/{entrypoint}"
-        script = f"{env_load}exec python {entry}"
+        cli_args = build_cli_arguments(ctx.job, ctx.arguments)
+        args_str = " ".join(shlex.quote(a) for a in cli_args)
+        target = f"{entry} {args_str}".rstrip()
+        script = f"{env_load}exec python {target}"
 
         if self._has_requirements(job_path):
             req_hash = self._requirements_hash(job_path)
@@ -124,9 +182,9 @@ class DockerExecutor(BaseRunner):
                 f"    {cache}/venv-{req_hash}/bin/pip install -q -r {root}/job/requirements.txt && "
                 f"    touch {cache}/venv-{req_hash}/.ready; "
                 f"  fi && "
-                f"  exec {cache}/venv-{req_hash}/bin/python {entry}; "
+                f"  exec {cache}/venv-{req_hash}/bin/python {target}; "
                 f"fi; "
-                f"exec python {entry}"
+                f"exec python {target}"
             )
 
         return ["/bin/sh", "-c", script]
@@ -241,7 +299,11 @@ class DockerExecutor(BaseRunner):
             )
 
         if runner_type == RunnerType.BASH:
-            command = ["bash", f"{ctx.container_root}/job/{entrypoint}"]
+            command = [
+                "bash",
+                f"{ctx.container_root}/job/{entrypoint}",
+                *build_cli_arguments(ctx.job, ctx.arguments),
+            ]
         elif runner_type == RunnerType.ANSIBLE:
             command = self._ansible_command(ctx)
         else:
@@ -388,10 +450,11 @@ class DockerExecutor(BaseRunner):
                 key, _, value = line.partition("=")
                 env[key.strip()] = value.strip().strip('"').strip("'")
 
+        cli_args = build_cli_arguments(job, ctx.arguments)
         if job["runner_type"] == RunnerType.BASH:
-            cmd = ["bash", str(workspace / entrypoint)]
+            cmd = ["bash", str(workspace / entrypoint), *cli_args]
         else:
-            cmd = ["python3", str(workspace / entrypoint)]
+            cmd = ["python3", str(workspace / entrypoint), *cli_args]
 
         if ctx.debug and ctx.on_debug_log:
             import shlex

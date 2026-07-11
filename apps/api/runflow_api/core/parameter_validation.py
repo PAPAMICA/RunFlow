@@ -34,7 +34,7 @@ def _coerce_value(param: JobParameter, raw: Any) -> Any:
         return int(raw)
     if ptype == ParameterType.FLOAT:
         return float(raw)
-    if ptype == ParameterType.BOOLEAN:
+    if ptype in (ParameterType.BOOLEAN, ParameterType.FLAG):
         if isinstance(raw, bool):
             return raw
         return str(raw).lower() in {"1", "true", "yes", "on"}

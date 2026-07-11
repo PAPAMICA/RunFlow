@@ -184,7 +184,21 @@ function ParameterField({
       {param.description && (
         <p className="text-xs text-muted-foreground">{param.description}</p>
       )}
-      {param.param_type === "boolean" ? (
+      {param.param_type === "flag" ? (
+        <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={value === "true"}
+            onChange={(e) => onChange(e.target.checked ? "true" : "false")}
+            className="h-4 w-4 accent-[var(--primary)]"
+          />
+          <span className="text-muted-foreground">
+            {value === "true"
+              ? `Ajoute --${param.name.replace(/_/g, "-")}`
+              : "Désactivé (option absente)"}
+          </span>
+        </label>
+      ) : param.param_type === "boolean" ? (
         <Select value={value || "false"} onChange={(e) => onChange(e.target.value)}>
           <option value="true">true</option>
           <option value="false">false</option>

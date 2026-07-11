@@ -117,8 +117,8 @@ function SidebarContent({
     <>
       <div className={cn("p-4 border-b border-border-subtle", collapsed && "px-3")}>
         <Link href="/dashboard" className="flex items-center gap-3 group" onClick={onNavigate}>
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 border border-primary/20 group-hover:glow-primary transition-shadow shrink-0">
-            <Activity className="h-5 w-5 text-primary" />
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent/12 border border-accent/25 group-hover:border-accent/40 transition-colors shrink-0">
+            <Activity className="h-5 w-5 text-accent" />
           </div>
           {!collapsed && (
             <div>

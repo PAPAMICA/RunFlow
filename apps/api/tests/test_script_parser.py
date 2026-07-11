@@ -19,6 +19,8 @@ parser.add_argument("--env", choices=["prod", "dev"], default="dev")
     env = next(p for p in params if p["name"] == "env")
     assert env["param_type"] == "select"
     assert env["options"] == ["prod", "dev"]
+    verbose = next(p for p in params if p["name"] == "verbose")
+    assert verbose["param_type"] == "flag"
 
 
 def test_parse_bash_usage_and_positional():

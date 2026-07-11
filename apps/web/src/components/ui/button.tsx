@@ -17,7 +17,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
           "disabled:pointer-events-none disabled:opacity-50 active:scale-[0.98]",
           "[&_svg]:shrink-0",
           variant === "default" &&
-            "bg-primary text-primary-foreground hover:brightness-110 shadow-sm shadow-primary/25",
+            "bg-primary text-primary-foreground hover:brightness-95 shadow-sm",
           variant === "secondary" &&
             "bg-elevated border border-border text-foreground hover:bg-card-hover hover:border-border-strong",
           variant === "outline" &&

@@ -152,6 +152,15 @@ async def worker_claim(
         "ansible_config": job.ansible_config,
         "secrets": secrets,
         "credentials": credentials,
+        "parameters": [
+            {
+                "name": p.name,
+                "param_type": p.param_type,
+                "position": p.position,
+                "label": p.label,
+            }
+            for p in sorted(job.parameters, key=lambda x: x.position)
+        ],
     }
 
     return WorkerRunPayload(

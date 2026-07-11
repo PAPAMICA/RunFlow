@@ -512,7 +512,8 @@ export function JobDeployForm({ projects, onCreated, onCancel }: JobDeployFormPr
                     >
                       <option value="string">Texte</option>
                       <option value="integer">Entier</option>
-                      <option value="boolean">Booléen</option>
+                      <option value="boolean">Booléen (valeur true/false)</option>
+                      <option value="flag">Flag (présent/absent)</option>
                       <option value="select">Liste</option>
                       <option value="secret">Secret</option>
                     </Select>

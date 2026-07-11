@@ -36,8 +36,8 @@ export default function LoginPage() {
       <div className="hidden lg:flex lg:w-[52%] flex-col justify-between p-12 xl:p-16 border-r border-border relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-accent/5" />
         <div className="relative flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 border border-primary/20 glow-primary">
-            <Activity className="h-6 w-6 text-primary" />
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-accent/12 border border-accent/25">
+            <Activity className="h-6 w-6 text-accent" />
           </div>
           <span className="text-xl font-bold tracking-tight">RunFlow</span>
         </div>

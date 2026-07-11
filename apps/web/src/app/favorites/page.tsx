@@ -243,7 +243,24 @@ export default function FavoritesPage() {
                         {userParams.map((p) => (
                           <div key={p.id} className="space-y-1">
                             <Label className="text-xs font-mono">{p.name}</Label>
-                            {p.param_type === "boolean" ? (
+                            {p.param_type === "flag" ? (
+                              <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={(args[p.name] ?? "false") === "true"}
+                                  onChange={(e) =>
+                                    setJobArgs(job.id, {
+                                      ...args,
+                                      [p.name]: e.target.checked ? "true" : "false",
+                                    })
+                                  }
+                                  className="h-4 w-4 accent-[var(--primary)]"
+                                />
+                                <span className="text-muted-foreground font-mono">
+                                  --{p.name.replace(/_/g, "-")}
+                                </span>
+                              </label>
+                            ) : p.param_type === "boolean" ? (
                               <Select
                                 value={args[p.name] ?? "false"}
                                 onChange={(e) =>

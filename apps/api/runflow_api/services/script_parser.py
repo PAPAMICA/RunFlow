@@ -13,7 +13,7 @@ def _normalize_flag(name: str) -> str:
 
 def _infer_param_type(kwargs: dict[str, Any], action: str | None) -> str:
     if action in {"store_true", "store_false"}:
-        return "boolean"
+        return "flag"
     if kwargs.get("choices"):
         return "select"
     type_val = kwargs.get("type")

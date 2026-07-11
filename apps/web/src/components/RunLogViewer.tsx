@@ -14,10 +14,10 @@ export interface RunLogEntry {
 }
 
 const STREAM_STYLES: Record<string, string> = {
-  stderr: "text-red-400",
-  system: "text-amber-400",
-  stdout: "text-cyan-300/90",
-  debug: "text-violet-300",
+  stderr: "text-[#ec5941]",
+  system: "text-[#e9be74]",
+  stdout: "text-foreground/85",
+  debug: "text-[#7cb0e6]",
 };
 
 const BASE_FILTERS = [
@@ -160,7 +160,7 @@ export function RunLogViewer({
             </span>
           )}
           {(debugRun || hasDebugLogs) && (
-            <span className="inline-flex items-center gap-1 text-[10px] text-violet-300 bg-violet-500/10 border border-violet-500/20 rounded px-1.5 py-0.5">
+            <span className="inline-flex items-center gap-1 text-[10px] text-[#7cb0e6] bg-primary/10 border border-primary/25 rounded px-1.5 py-0.5">
               <Bug className="h-3 w-3" />
               debug
             </span>
@@ -185,7 +185,7 @@ export function RunLogViewer({
                     "px-2.5 py-1 text-[11px] font-medium transition-colors",
                     streamFilter === f.id
                       ? f.id === "debug"
-                        ? "bg-violet-500/20 text-violet-200"
+                        ? "bg-primary/20 text-[#9cc4ec]"
                         : "bg-primary/15 text-primary"
                       : "text-muted-foreground hover:text-foreground hover:bg-card/80"
                   )}
@@ -240,7 +240,7 @@ export function RunLogViewer({
                   className={cn(
                     "flex gap-2 sm:gap-3 py-0.5 rounded px-1 -mx-1 group",
                     isDebug
-                      ? "bg-violet-500/[0.04] hover:bg-violet-500/[0.07] border-l-2 border-violet-500/35 pl-2 ml-0"
+                      ? "bg-primary/[0.05] hover:bg-primary/[0.09] border-l-2 border-primary/40 pl-2 ml-0"
                       : "hover:bg-white/[0.02]",
                     isHeader && "mt-2 first:mt-0"
                   )}
@@ -263,8 +263,8 @@ export function RunLogViewer({
                   <span
                     className={cn(
                       "whitespace-pre-wrap break-all min-w-0 flex-1",
-                      isDebug ? "text-violet-100/90" : "text-foreground/90",
-                      isHeader && "font-semibold text-violet-200"
+                      isDebug ? "text-[#c7ddf5]" : "text-foreground/90",
+                      isHeader && "font-semibold text-[#9cc4ec]"
                     )}
                   >
                     {l.message}

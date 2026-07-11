@@ -61,6 +61,7 @@ export function defaultArgsFromJob(job: Job): Record<string, string> {
   const defaults: Record<string, string> = {};
   for (const p of getUserFacingParameters(job)) {
     if (p.default_value != null) defaults[p.name] = String(p.default_value);
+    else if (p.param_type === "flag") defaults[p.name] = "false";
   }
   return defaults;
 }
@@ -73,7 +74,7 @@ export function buildJobArguments(
   for (const p of parameters) {
     const raw = rawArgs[p.name];
     if (raw === undefined || raw === "") continue;
-    if (p.param_type === "boolean") args[p.name] = raw === "true";
+    if (p.param_type === "boolean" || p.param_type === "flag") args[p.name] = raw === "true";
     else if (p.param_type === "integer") args[p.name] = parseInt(raw, 10);
     else args[p.name] = raw;
   }

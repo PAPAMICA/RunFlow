@@ -31,10 +31,10 @@ const config: Config = {
         mono: ["var(--font-mono)", "ui-monospace", "monospace"],
       },
       borderRadius: {
-        lg: "0.625rem",
-        xl: "0.875rem",
-        "2xl": "1.1rem",
-        "3xl": "1.5rem",
+        lg: "0.375rem",
+        xl: "0.5rem",
+        "2xl": "0.625rem",
+        "3xl": "0.875rem",
       },
       animation: {
         "fade-in": "fadeIn 0.25s ease-out",

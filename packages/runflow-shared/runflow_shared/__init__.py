@@ -65,6 +65,7 @@ class ParameterType(StrEnum):
     INTEGER = "integer"
     FLOAT = "float"
     BOOLEAN = "boolean"
+    FLAG = "flag"
     SELECT = "select"
     MULTI_SELECT = "multi_select"
     SECRET = "secret"
