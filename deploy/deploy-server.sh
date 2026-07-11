@@ -94,23 +94,36 @@ ensure_generated_secrets() {
 }
 
 validate_env() {
-  [[ "${RUNFLOW_WEB_HOST}" != *example.com* ]] \
+  [[ -n "${RUNFLOW_WEB_HOST:-}" && "${RUNFLOW_WEB_HOST}" != *example.com* ]] \
     || die "Configurez RUNFLOW_WEB_HOST dans .env (domaine réel, pas example.com)"
-  [[ "${RUNFLOW_API_HOST}" != *example.com* ]] \
+  [[ -n "${RUNFLOW_API_HOST:-}" && "${RUNFLOW_API_HOST}" != *example.com* ]] \
     || die "Configurez RUNFLOW_API_HOST dans .env (domaine réel, pas example.com)"
+}
+
+ensure_worker_stub() {
+  mkdir -p "$WORKER_DIR"
+  if [[ ! -f "$WORKER_ENV" ]]; then
+    cat >"$WORKER_ENV" <<EOF
+RUNFLOW_API_URL=http://api:8000
+RUNFLOW_WORKER_TOKEN=
+EOF
+    chmod 600 "$WORKER_ENV"
+    log "Fichier worker temporaire créé ($WORKER_ENV)"
+  fi
 }
 
 wait_for_api() {
   log "Attente de l'API..."
-  local i
+  local i status
   for i in $(seq 1 60); do
-    if $COMPOSE exec -T api curl -sf http://localhost:8000/health >/dev/null 2>&1; then
+    status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}unknown{{end}}' runflow_api 2>/dev/null || echo unknown)"
+    if [[ "$status" == "healthy" ]]; then
       log "API prête"
       return 0
     fi
     sleep 2
   done
-  die "L'API n'a pas démarré dans le délai imparti. Vérifiez : $COMPOSE logs api"
+  die "L'API n'a pas démarré dans le délai imparti. Vérifiez : docker logs runflow_api"
 }
 
 ensure_admin() {
@@ -152,6 +165,8 @@ RUNFLOW_API_URL=http://api:8000
 RUNFLOW_WORKER_TOKEN=${token}
 EOF
   chmod 600 "$WORKER_ENV"
+  patch_env_var "RUNFLOW_WORKER_TOKEN" "$token"
+  load_env
   log "Credentials worker écrits dans $WORKER_ENV"
 }
 
@@ -168,7 +183,8 @@ main() {
   WORKER_ENV="$WORKER_DIR/worker.env"
 
   log "Préparation des répertoires de données..."
-  mkdir -p "$ROOT/data/postgres" "$ROOT/data/runflow" "$WORKER_DIR"
+  mkdir -p "$ROOT/data/postgres" "$ROOT/data/runflow"
+  ensure_worker_stub
 
   log "Réseau Traefik (proxy)..."
   docker network inspect "${TRAEFIK_NETWORK:-proxy}" >/dev/null 2>&1 \

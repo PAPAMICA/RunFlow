@@ -113,12 +113,14 @@ services:
     container_name: runflow_worker_${WORKER_NAME:-server}
     environment:
       RUNFLOW_API_URL: http://api:8000
+      RUNFLOW_WORKER_TOKEN: ${RUNFLOW_WORKER_TOKEN:-}
       DOCKER_ENABLED: "true"
       PYTHON_RUNNER_IMAGE: ${PYTHON_RUNNER_IMAGE:-runflow/runner-python:0.1.0}
       BASH_RUNNER_IMAGE: ${BASH_RUNNER_IMAGE:-runflow/runner-bash:0.1.0}
       ANSIBLE_RUNNER_IMAGE: ${ANSIBLE_RUNNER_IMAGE:-runflow/runner-ansible:0.1.0}
     env_file:
-      - ../data/worker-${WORKER_NAME:-server}/worker.env
+      - path: ../data/worker-${WORKER_NAME:-server}/worker.env
+        required: false
     volumes:
       - ../data/worker-${WORKER_NAME:-server}:/worker-data
       - /var/run/docker.sock:/var/run/docker.sock
