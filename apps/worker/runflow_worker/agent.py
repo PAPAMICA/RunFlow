@@ -11,6 +11,7 @@ from pathlib import Path
 from httpx import ConnectError, HTTPError
 
 from runflow_shared import LogStream
+from runflow_worker import __version__
 from runflow_worker.client import WorkerAPIClient
 from runflow_worker.config import get_settings
 from runflow_worker.runners.base import RunContext
