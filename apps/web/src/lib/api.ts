@@ -235,6 +235,7 @@ export interface Job {
   enabled: boolean;
   git_config?: GitConfig | null;
   has_env_file?: boolean;
+  timeout_seconds?: number;
   parameters: JobParameter[];
   project_id: string;
 }
